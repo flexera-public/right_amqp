@@ -1,0 +1,8 @@
+.idea
+*.swp
+.rvmrc
+.rvmrc*
+.bundle
+pkg/*
+.DS_Store
+nbproject/*
