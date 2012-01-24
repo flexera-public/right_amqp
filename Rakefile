@@ -23,12 +23,13 @@
 
 require 'rubygems'
 require 'bundler/setup'
-require 'fileutils'
+
 require 'rake'
-require 'rspec/core/rake_task'
-require 'rake/rdoctask'
-require 'rake/gempackagetask'
+require 'rdoc/task'
+require 'rubygems/package_task'
 require 'rake/clean'
+require 'rake/gempackagetask'
+require 'rspec/core/rake_task'
 require 'bacon'
 
 task :default => 'spec'

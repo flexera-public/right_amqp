@@ -20,9 +20,36 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-require 'digest/md5'
-require 'right_support'
+require 'rubygems'
+require 'bundler/setup'
 
-require 'right_amqp/mq'
-require 'right_amqp/amqp'
-require 'right_amqp/broker'
+require 'flexmock'
+require 'rspec'
+
+RSpec.configure do |c|
+  c.mock_with(:flexmock)
+end
+
+$TESTING = true
+$VERBOSE = nil # Disable constant redefined warning
+
+module RightAMQP
+
+  module SpecHelper
+
+    # Setup mocking of logger such that need to override :exception, :error, and :warning
+    # in specs that are expected to require use of these methods
+    def setup_logger
+      @logger = flexmock("logger")
+      @logger.should_receive(:level).and_return(:info).by_default
+      @logger.should_receive(:exception).by_default.and_return { |m| raise Logger.format_exception(*m.first(2)) }
+      @logger.should_receive(:error).by_default.and_return { |m| raise Logger.format_exception(*m) }
+      @logger.should_receive(:warning).by_default.and_return { |m| raise Logger.format_exception(*m) }
+      @logger.should_receive(:info).by_default
+      @logger.should_receive(:debug).by_default
+      RightSupport::Log::Mixin.default_logger = @logger
+    end
+
+  end
+
+end

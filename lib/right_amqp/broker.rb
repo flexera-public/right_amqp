@@ -20,9 +20,6 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-require 'digest/md5'
-require 'right_support'
-
-require 'right_amqp/mq'
-require 'right_amqp/amqp'
-require 'right_amqp/broker'
+Dir[File.expand_path('../broker/*.rb', __FILE__)].each do |filename|
+  require filename
+end
