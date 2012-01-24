@@ -111,6 +111,7 @@ module AMQP
         if connected?
           if @last_server_heartbeat < (Time.now - (@settings[:heartbeat] * 2))
             log "Reconnecting due to missing server heartbeats"
+            logger.warn("Reconnecting to broker #{@settings[:identity]} due to missing server heartbeats")
             reconnect(true)
           else
             @last_server_heartbeat = Time.now
@@ -233,7 +234,7 @@ module AMQP
         end
       end
 
-      logger.warning("Attempting to reconnect to broker rs-broker-#{@settings[:host].gsub('-', '~').to_s}-#{@settings[:port].to_i}")
+      logger.warn("Attempting to reconnect to #{@settings[:identity]}")
       log 'reconnecting'
       EM.reconnect(@settings[:host], @settings[:port], self)
     end

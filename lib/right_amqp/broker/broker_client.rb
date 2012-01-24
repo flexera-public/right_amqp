@@ -581,6 +581,7 @@ module RightAMQP
                                    :vhost              => @options[:vhost],
                                    :host               => address[:host],
                                    :port               => address[:port],
+                                   :identity           => @identity,
                                    :insist             => @options[:insist] || false,
                                    :heartbeat          => @options[:heartbeat],
                                    :reconnect_delay    => lambda { rand(reconnect_interval) },
