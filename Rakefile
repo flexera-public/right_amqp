@@ -69,12 +69,12 @@ namespace :spec do
   end
 
   task :codegen do
-    sh 'ruby protocol/codegen.rb > lib/right_amqp/amqp/amqp/spec.rb'
-    sh 'ruby lib/right_amqp/amqp/amqp/spec.rb'
+    sh 'ruby protocol/codegen.rb > lib/right_amqp/amqp/spec.rb'
+    sh 'ruby lib/right_amqp/amqp/spec.rb'
   end
 
   task :amqp do
-    sh 'bacon lib/right_amqp/amqp/amqp.rb'
+    sh 'bacon lib/right_amqp/amqp.rb'
   end
 end
 
