@@ -1,3 +1,4 @@
+require 'right_support'
 require File.expand_path('../frame', __FILE__)
 
 module AMQP
@@ -43,6 +44,12 @@ module AMQP
           @on_disconnect.call if @on_disconnect
         end
       end
+
+      # Make callback now that handshake with the broker has completed
+      # The 'connected' status callback happens before the handshake is done and if it results in
+      # a lot of activity it might prevent EM from being able to call the code handling the
+      # incoming handshake packet in a timely fashion causing the broker to close the connection
+      @connection_status.call(:ready) if @connection_status && frame.payload.is_a?(AMQP::Protocol::Connection::Start)
     end
   end
 
@@ -57,12 +64,13 @@ module AMQP
 
   module Client
     include EM::Deferrable
+    include RightSupport::Log::Mixin
 
     def initialize opts = {}
       @settings = opts
       extend AMQP.client
 
-      @on_disconnect ||= proc{ raise Error, "Could not connect to server #{opts[:host]}:#{opts[:port]}" }
+      @on_disconnect ||= proc{ @connection_status.call(:failed) if @connection_status }
 
       timeout @settings[:timeout] if @settings[:timeout]
       errback{ @on_disconnect.call } unless @reconnecting
@@ -108,13 +116,23 @@ module AMQP
       @channels ||= {}
     end
 
+    # Catch exceptions that would otherwise cause EM to stop or be in a bad
+    # state if a top level EM error handler was setup. Instead close the connection and leave EM
+    # alone.
+    # Don't log an error if the environment variable IGNORE_AMQP_FAILURES is set (used in the
+    # enroll script)
     def receive_data data
-      # log 'receive_data', data
-      @buf << data
+      begin
+        # log 'receive_data', data
+        @buf << data
 
-      while frame = Frame.parse(@buf)
-        log 'receive', frame
-        process_frame frame
+        while frame = Frame.parse(@buf)
+          log 'receive', frame
+          process_frame frame
+        end
+      rescue Exception => e
+        logger.exception("Exception caught while processing AMQP frame, closing connection", e, :trace) unless ENV['IGNORE_AMQP_FAILURES']
+        close_connection
       end
     end
 
@@ -164,33 +182,35 @@ module AMQP
 
     def reconnect force = false
       if @reconnecting and not force
-        # wait 1 second after first reconnect attempt, in between each subsequent attempt
-        EM.add_timer(1){ reconnect(true) }
+        # Wait after first reconnect attempt and in between each subsequent attempt
+        EM.add_timer(@settings[:reconnect_interval] || 5) { reconnect(true) }
         return
       end
 
       unless @reconnecting
-        @reconnecting = true
-
         @deferred_status = nil
         initialize(@settings)
 
         mqs = @channels
         @channels = {}
         mqs.each{ |_,mq| mq.reset } if mqs
+
+        @reconnecting = true
+
+        again = @settings[:reconnect_delay]
+        again = again.call if again.is_a?(Proc)
+        if again.is_a?(Numeric)
+          # Wait before making initial reconnect attempt
+          EM.add_timer(again) { reconnect(true) }
+          return
+        elsif ![nil, true].include?(again)
+          raise ::AMQP::Error, "Could not interpret :reconnect_delay => #{again.inspect}; expected nil, true, or Numeric"
+        end
       end
 
+      logger.warning("Attempting to reconnect to broker rs-broker-#{@settings[:host].gsub('-', '~').to_s}-#{@settings[:port].to_i}")
       log 'reconnecting'
-      EM.reconnect @settings[:host], @settings[:port], self
-    end
-
-    def self.connect opts = {}
-      opts = AMQP.settings.merge(opts)
-      EM.connect opts[:host], opts[:port], self, opts
-    end
-
-    def connection_status &blk
-      @connection_status = blk
+      EM.reconnect(@settings[:host], @settings[:port], self)
     end
 
     private

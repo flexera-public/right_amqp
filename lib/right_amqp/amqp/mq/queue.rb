@@ -66,10 +66,12 @@ class MQ
       @opts = opts
       @bindings ||= {}
       @mq.queues[@name = name] ||= self
-      @mq.callback{
-        @mq.send Protocol::Queue::Declare.new({ :queue => name,
-                                                :nowait => true }.merge(opts))
-      }
+      unless opts[:no_declare]
+        @mq.callback{
+          @mq.send Protocol::Queue::Declare.new({ :queue => name,
+                                                  :nowait => true }.merge(opts))
+        }
+      end
     end
     attr_reader :name
 

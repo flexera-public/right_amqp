@@ -148,7 +148,7 @@ class MQ
   attr_reader :channel, :connection
   
   # May raise a MQ::Error exception when the frame payload contains a
-  # Protocol::Channel::Close object. 
+  # Protocol::Channel::Close object.
   #
   # This usually occurs when a client attempts to perform an illegal
   # operation. A short, and incomplete, list of potential illegal operations
@@ -167,8 +167,12 @@ class MQ
     when Frame::Body
       @body << frame.payload
       if @body.length >= @header.size
-        @header.properties.update(@method.arguments)
-        @consumer.receive @header, @body if @consumer
+        if @method.is_a? Protocol::Basic::Return
+          @on_return_message.call @method, @body if @on_return_message
+        else
+          @header.properties.update(@method.arguments)
+          @consumer.receive @header, @body if @consumer
+        end
         @body = @header = @consumer = @method = nil
       end
 
@@ -221,6 +225,11 @@ class MQ
           MQ.error "Basic.GetEmpty for invalid consumer"
         end
 
+      when Protocol::Basic::Return
+        @method = method
+        @header = nil
+        @body = ''
+
       when Protocol::Channel::Close
         raise Error, "#{method.reply_text} in #{Protocol.classes[method.class_id].methods[method.method_id]} on #{@channel}"
 
@@ -239,6 +248,11 @@ class MQ
         end
       end
     end
+  end
+
+  # Provide callback to be activated when a message is returned
+  def return_message &blk
+    @on_return_message = blk
   end
 
   def send *args

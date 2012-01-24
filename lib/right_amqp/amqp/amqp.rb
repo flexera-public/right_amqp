@@ -76,11 +76,16 @@ module AMQP
   # block. See the code examples in MQ for details.
   #
   def self.start *args, &blk
-    EM.run{
-      @conn ||= connect *args
-      @conn.callback(&blk) if blk
-      @conn
-    }
+    begin
+      EM.run{
+        @conn ||= connect *args
+        @conn.callback(&blk) if blk
+        @conn
+      }
+    rescue Exception => e
+      @conn = nil
+      raise e
+    end
   end
 
   class << self
