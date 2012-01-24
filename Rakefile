@@ -29,6 +29,7 @@ require 'rspec/core/rake_task'
 require 'rake/rdoctask'
 require 'rake/gempackagetask'
 require 'rake/clean'
+require 'bacon'
 
 task :default => 'spec'
 
@@ -65,6 +66,15 @@ namespace :spec do
   desc 'Print Specdoc for all unit tests'
   RSpec::Core::RakeTask.new(:doc) do |t|
     t.rspec_opts = ["--format", "documentation"]
+  end
+
+  task :codegen do
+    sh 'ruby protocol/codegen.rb > lib/right_amqp/amqp/amqp/spec.rb'
+    sh 'ruby lib/right_amqp/amqp/amqp/spec.rb'
+  end
+
+  task :amqp do
+    sh 'bacon lib/right_amqp/amqp/amqp.rb'
   end
 end
 
