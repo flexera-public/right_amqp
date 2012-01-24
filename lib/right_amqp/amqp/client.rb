@@ -27,7 +27,7 @@ module AMQP
         when Protocol::Connection::Tune
           send Protocol::Connection::TuneOk.new(:channel_max => 0,
                                                 :frame_max => 131072,
-                                                :heartbeat => 0)
+                                                :heartbeat => @settings[:heartbeat] || 0)
 
           send Protocol::Connection::Open.new(:virtual_host => @settings[:vhost],
                                               :capabilities => '',
@@ -43,6 +43,10 @@ module AMQP
         when Protocol::Connection::CloseOk
           @on_disconnect.call if @on_disconnect
         end
+
+      when Frame::Heartbeat
+        @last_server_heartbeat = Time.now
+
       end
 
       # Make callback now that handshake with the broker has completed
@@ -93,6 +97,27 @@ module AMQP
       @buf = Buffer.new
       send_data HEADER
       send_data [1, 1, VERSION_MAJOR, VERSION_MINOR].pack('C4')
+
+      if heartbeat = @settings[:heartbeat]
+        init_heartbeat if (@settings[:heartbeat] = heartbeat.to_i) > 0
+      end
+    end
+
+    def init_heartbeat
+      @last_server_heartbeat = Time.now
+
+      @timer.cancel if @timer
+      @timer = EM::PeriodicTimer.new(@settings[:heartbeat]) do
+        if connected?
+          if @last_server_heartbeat < (Time.now - (@settings[:heartbeat] * 2))
+            log "Reconnecting due to missing server heartbeats"
+            reconnect(true)
+          else
+            @last_server_heartbeat = Time.now
+            send AMQP::Frame::Heartbeat.new, :channel => 0
+          end
+        end
+      end
     end
 
     def connected?
