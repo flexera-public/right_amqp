@@ -239,6 +239,15 @@ module AMQP
       EM.reconnect(@settings[:host], @settings[:port], self)
     end
 
+    def self.connect opts = {}
+      opts = AMQP.settings.merge(opts)
+      EM.connect opts[:host], opts[:port], self, opts
+    end
+
+    def connection_status &blk
+      @connection_status = blk
+    end
+
     private
 
     def disconnected
