@@ -517,10 +517,10 @@ module RightAMQP
         "identity"        => @identity,
         "status"          => @status.to_s,
         "disconnect last" => @disconnects.last,
-        "disconnects"     => RightSupport::Stats::Utilities.nil_if_zero(@disconnects.total),
+        "disconnects"     => RightSupport::Stats.nil_if_zero(@disconnects.total),
         "failure last"    => @failures.last,
-        "failures"        => RightSupport::Stats::Utilities.nil_if_zero(@failures.total),
-        "retries"         => RightSupport::Stats::Utilities.nil_if_zero(@retries)
+        "failures"        => RightSupport::Stats.nil_if_zero(@failures.total),
+        "retries"         => RightSupport::Stats.nil_if_zero(@retries)
       }
     end
 

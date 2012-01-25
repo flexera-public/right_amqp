@@ -20,25 +20,6 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-class String
-  ##
-  # Convert to snake case.
-  #
-  #   "FooBar".snake_case           #=> "foo_bar"
-  #   "HeadlineCNNNews".snake_case  #=> "headline_cnn_news"
-  #   "CNN".snake_case              #=> "cnn"
-  #
-  # @return [String] Receiver converted to snake case.
-  #
-  # @api public
-  def snake_case
-    return downcase if match(/\A[A-Z]+\z/)
-    gsub(/([A-Z]+)([A-Z][a-z])/, '\1_\2').
-    gsub(/([a-z])([A-Z])/, '\1_\2').
-    downcase
-  end
-end
-
 module RightAMQP
 
   # Client for multiple AMQP brokers used together to achieve a high availability

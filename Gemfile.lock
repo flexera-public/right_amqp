@@ -1,6 +1,6 @@
 GIT
   remote: git@github.com:rightscale/right_support.git
-  revision: 02166a35a34d28033f2140404f7224d2669414b9
+  revision: abb6bd33e2e18deb4d873083edb1fb1652e63c2e
   branch: azure_11744_right_amqp
   specs:
     right_support (1.2.0)
