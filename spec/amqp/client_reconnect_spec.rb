@@ -27,19 +27,16 @@ describe AMQP::Client do
 
   context 'with an incorrect AMQP password' do
 
-    class SUT
-      
-      include AMQP::Client
+    include RightAMQP::SpecHelper
 
-#      @logger = flexmock("logger")
-#      @logger.should_receive(:exception).by_default.and_return { |m| raise Logger.format_exception(*m.first(2)) }
-#      @logger.should_receive(:warning).by_default.and_return { |m| raise Logger.format_exception(*m) }
-#      RightSupport::Log::Mixin.default_logger = @logger
+    class SUT
+      include AMQP::Client
 
       attr_accessor :reconnecting, :settings, :channels
     end
 
     before(:each) do
+      setup_logger
       @sut = flexmock(SUT.new)
       @sut.reconnecting = false
       @sut.settings = {:host => 'testhost', :port=>'12345'}

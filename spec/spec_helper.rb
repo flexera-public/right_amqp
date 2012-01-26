@@ -37,14 +37,15 @@ module RightAMQP
 
   module SpecHelper
 
-    # Setup mocking of logger such that need to override :exception, :error, and :warning
+    # Setup mocking of logger such that need to override :error and :warning
     # in specs that are expected to require use of these methods
+    # Do not mock :exception because that gets eaten by Log::Mixin and results
+    # in :error call
     def setup_logger
       @logger = flexmock("logger")
       @logger.should_receive(:level).and_return(:info).by_default
-      @logger.should_receive(:exception).by_default.and_return { |m| raise Logger.format_exception(*m.first(2)) }
-      @logger.should_receive(:error).by_default.and_return { |m| raise Logger.format_exception(*m) }
-      @logger.should_receive(:warning).by_default.and_return { |m| raise Logger.format_exception(*m) }
+      @logger.should_receive(:error).by_default.and_return { |m| raise m }
+      @logger.should_receive(:warning).by_default.and_return { |m| raise m }
       @logger.should_receive(:info).by_default
       @logger.should_receive(:debug).by_default
       RightSupport::Log::Mixin.default_logger = @logger

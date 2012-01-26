@@ -348,11 +348,12 @@ module RightAMQP
           unless options[:no_log] && logger.level != :debug
             re = "RE-" if packet.respond_to?(:tries) && !packet.tries.empty?
             log_filter = options[:log_filter] unless logger.level == :debug
-            log_data = "#{re}SEND #{@alias} #{packet.to_s(log_filter, :send_version)} #{options[:log_data]}"
+            log_data = "#{re}SEND #{@alias} #{packet.to_s(log_filter, :send_version)}"
             if logger.level == :debug
               log_data += ", publish options #{options.inspect}, exchange #{exchange[:name]}, " +
                           "type #{exchange[:type]}, options #{exchange[:options].inspect}"
             end
+            log_data += ", #{options[:log_data]}" if options[:log_data]
             logger.info(log_data) unless log_data.empty?
           end
         end
@@ -630,7 +631,6 @@ module RightAMQP
       rescue Exception => e
         # TODO Taking advantage of Serializer knowledge here even though out of scope
         trace = e.class.name =~ /SerializationError/ ? :caller : :trace
-        trace = :trace
         logger.exception("Failed receiving from queue #{queue} on #{@alias}", e, trace)
         @exceptions.track("receive", e)
         @options[:exception_on_receive_callback].call(message, e) if @options[:exception_on_receive_callback]

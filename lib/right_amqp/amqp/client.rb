@@ -70,6 +70,10 @@ module AMQP
     include EM::Deferrable
     include RightSupport::Log::Mixin
 
+    def self.included(base)
+      base.extend(RightSupport::Log::Mixin::ClassMethods)
+    end
+
     def initialize opts = {}
       @settings = opts
       extend AMQP.client

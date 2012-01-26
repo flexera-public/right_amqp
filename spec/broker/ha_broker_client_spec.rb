@@ -709,10 +709,10 @@ describe RightAMQP::HABrokerClient do
       end
 
       it "should log an error if a selected broker is unknown but still publish with any remaining brokers" do
-        @logger.should_receive(:exception).with(/Invalid broker identity "rs-broker-fifth-5672"/).once
+        @logger.should_receive(:error).with(/Invalid broker identity "rs-broker-fourth-5672"/).once
         ha = RightAMQP::HABrokerClient.new(@serializer, :host => "first, second, third")
         ha.publish({:type => :direct, :name => "exchange"}, @packet,
-                   :brokers =>["rs-broker-fifth-5672", @identity1]).should == [@identity1]
+                   :brokers =>["rs-broker-fourth-5672", @identity1]).should == [@identity1]
       end
 
       it "should raise an exception if all available brokers fail to publish" do
@@ -971,7 +971,7 @@ describe RightAMQP::HABrokerClient do
       it "should return nil and not execute block if broker is unknown" do
         @logger.should_receive(:info).with(/Ignored request to remove/).once
         ha = RightAMQP::HABrokerClient.new(@serializer, :host => "first, second, third")
-        ha.remove("fifth", 5672).should be_nil
+        ha.remove("fourth", 5672).should be_nil
         ha.brokers.size.should == 3
       end
 
@@ -1349,7 +1349,7 @@ describe RightAMQP::HABrokerClient do
       end
 
       it "should close all broker connections even if encounter an exception" do
-        @logger.should_receive(:exception).with(/Failed to close/, Exception, :trace).once
+        @logger.should_receive(:error).with(/Failed to close/).once
         @broker1.should_receive(:close).and_return(true).and_yield.once
         @broker2.should_receive(:close).and_raise(Exception).once
         @broker3.should_receive(:close).and_return(true).and_yield.once
