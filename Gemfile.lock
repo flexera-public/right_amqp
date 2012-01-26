@@ -8,7 +8,7 @@ GIT
 PATH
   remote: .
   specs:
-    right_amqp (0.6.8)
+    right_amqp (0.1.0)
       eventmachine (~> 0.12.10)
       right_support (~> 1.2)
 
