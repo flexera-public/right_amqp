@@ -261,6 +261,7 @@ class MQ
         args.each do |data|
           data.ticket = @ticket if @ticket and data.respond_to? :ticket=
           log :sending, data
+          raise ::AMQP::Error, "Attempting to send with no open channels" if @channel.nil? || c.channels.empty?
           c.send data, :channel => @channel
         end
       end
