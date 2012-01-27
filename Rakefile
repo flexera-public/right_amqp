@@ -28,70 +28,45 @@ require 'rake'
 require 'rdoc/task'
 require 'rubygems/package_task'
 require 'rake/clean'
-require 'rake/gempackagetask'
 require 'rspec/core/rake_task'
 require 'bacon'
 
+desc "Run unit tests"
 task :default => 'spec'
 
-# == Gem packaging == #
-
-desc "Package gem"
-gemtask = Rake::GemPackageTask.new(Gem::Specification.load("right_amqp.gemspec")) do |package|
-  package.package_dir = ENV['PACKAGE_DIR'] || 'pkg'
-  package.need_zip = true
-  package.need_tar = true
-end
-
-directory gemtask.package_dir
-
-CLEAN.include(gemtask.package_dir)
-
-# == Unit tests == #
-
-RSPEC_OPTS = ['--options', "\"#{File.dirname(__FILE__)}/spec/spec.opts\""]
-
-desc 'Run unit tests'
+desc "Run unit tests"
 RSpec::Core::RakeTask.new do |t|
-  t.rspec_opts = RSPEC_OPTS
+  t.rspec_opts = ['--options', "\"#{File.dirname(__FILE__)}/spec/spec.opts\""]
 end
 
 namespace :spec do
-  desc 'Run unit tests with RCov'
-  RSpec::Core::RakeTask.new(:rcov) do |t|
-    t.rspec_opts = RSPEC_OPTS
-    t.rcov = true
-    t.rcov_opts = %q[--exclude "spec"]
-  end
-
-  desc 'Print Specdoc for all unit tests'
-  RSpec::Core::RakeTask.new(:doc) do |t|
-    t.rspec_opts = ["--format", "documentation"]
-  end
-
+  desc "Regenerate AMQP unit test code"
   task :codegen do
     sh 'ruby protocol/codegen.rb > lib/right_amqp/amqp/spec.rb'
     sh 'ruby lib/right_amqp/amqp/spec.rb'
   end
 
+  desc "Run AMQP unit tests"
   task :amqp do
     sh 'bacon lib/right_amqp/amqp.rb'
   end
 end
 
-# == Documentation == #
-
-desc 'Generate API documentation to doc/rdocs/index.html'
-Rake::RDocTask.new do |rd|
-  rd.rdoc_dir = 'doc/rdocs'
-  rd.main = 'README.rdoc'
-  rd.rdoc_files.include 'README.rdoc', 'lib/**/*.rb'
+desc 'Generate documentation for the right_amqp gem'
+Rake::RDocTask.new(:rdoc) do |rdoc|
+  rdoc.rdoc_dir = 'doc/rdocs'
+  rdoc.title = 'RightAMQP'
+  rdoc.main = 'README.rdoc'
+  rdoc.options << '--line-numbers' << '--inline-source'
+  rdoc.rdoc_files.include('README.rdoc')
+  rdoc.rdoc_files.include('lib/**/*.rb')
+  rdoc.rdoc_files.exclude('spec/**/*')
 end
 CLEAN.include('doc/rdocs')
 
-# == Emacs integration ==
-
-desc 'Rebuild TAGS file for emacs'
-task :tags do
-  sh 'rtags -R lib spec'
+desc "Build right_amqp gem"
+Gem::PackageTask.new(Gem::Specification.load("right_amqp.gemspec")) do |package|
+  package.need_zip = true
+  package.need_tar = true
 end
+CLEAN.include('pkg')

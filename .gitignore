@@ -3,6 +3,8 @@
 .rvmrc
 .rvmrc*
 .bundle
+tmp/*
 pkg/*
+doc/rdocs/*
 .DS_Store
 nbproject/*

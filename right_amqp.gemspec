@@ -42,11 +42,13 @@ Gem::Specification.new do |spec|
   spec.description = <<-EOF
 RightAMQP provides a high availability client for interfacing with the
 RightScale RabbitMQ broker using the AMQP protocol. The AMQP version on which
-this is based is 0.6.7 but this gem contains a number of RightScale bug fixes
-and enhancements including message return, heartbeat and UTF8 support.
-The high availability is achieved via multiple broker connections such that
-failed connections automatically reconnect and when publishing a message
-the broker used for routing is chosen from currently connected brokers.
+this gem is based is 0.6.7 but beyond that it contains a number of bug fixes and
+enhancements including reconnect, message return, heartbeat and UTF-8 support.
+The high availability is achieved by maintaining multiple broker connections
+such that failed connections automatically reconnect and only connected
+brokers are used when routing a message. Although the HABrokerClient class
+is the intended primary means for accessing RabbitMQ services with this gem,
+alternatively the underlying AMQP services may be used directly.
 EOF
 
   candidates = Dir.glob("{lib,spec}/**/*") +
