@@ -56,11 +56,9 @@ desc 'Generate documentation for the right_amqp gem'
 Rake::RDocTask.new(:rdoc) do |rdoc|
   rdoc.rdoc_dir = 'doc/rdocs'
   rdoc.title = 'RightAMQP'
-  rdoc.main = 'README.rdoc'
   rdoc.options << '--line-numbers' << '--inline-source'
   rdoc.rdoc_files.include('README.rdoc')
   rdoc.rdoc_files.include('lib/**/*.rb')
-  rdoc.rdoc_files.exclude('spec/**/*')
 end
 CLEAN.include('doc/rdocs')
 

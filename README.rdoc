@@ -7,7 +7,7 @@
 RightAMQP provides a high availability client for interfacing with the
 RightScale RabbitMQ broker using the AMQP protocol. The AMQP version on which
 this gem is based is 0.6.7 but beyond that it contains a number of bug fixes and
-enhancements including reconnect, message return, heartbeat and UTF-8 support.
+enhancements including reconnect, message return, heartbeat, and UTF-8 support.
 The high availability is achieved by maintaining multiple broker connections
 such that failed connections automatically reconnect and only connected
 brokers are used when routing a message. Although the HABrokerClient class
@@ -30,10 +30,10 @@ the brokers, and monitoring the status of the broker connections.
 The namespace for high availability access is RightAMQP. The namespace for low
 level AMQP support remains AMQP. Both rely on eventmachine for task management.
 
-= Connecting
+=== Connecting
 
 Creating an HABrokerClient object causes connections to one or more brokers
-to be create, e.g.,
+to be created, e.g.,
 
   b = RightAMQP::HABrokerClient.new(serializer, :user => 'user', :pass => 'secret',
                                     :vhost => '/abc', :host => 'broker0.com,broker1.com')
@@ -56,13 +56,13 @@ To know when a connection has been established, #connection_status is used, e.g.
 with the :on_off option indicating that only seeking to be notified of the
 first connection status change and in this case only willing to wait 60 seconds.
 
-= Reconnecting, Heartbeat, and Status Updates
+=== Reconnecting, Heartbeat, and Status Updates
 
 If a broker connection is lost, the HABrokerClient will automatically attempt
 to reconnect on the interval specified with the :reconnect_interval option.
 As further protection against lost connections the :heartbeat option may be
 specified as the interval between AMQP keep alive messages being sent between
-the application and the brokers.
+the application and the brokers. This is useful in firewall environments.
 
 The #connection_status method used above to detect the initial connection may
 also be used to monitor connectivity throughout the life of the application, e.g.,
@@ -77,7 +77,7 @@ brokers, and then a subsequent :connected status means that have regained
 connection to at least one broker. There are finer grain controls by
 indicating the specific :brokers of interest
 
-= Subscribing, Declaring, and Unsubscribing
+=== Subscribing, Declaring, and Unsubscribing
 
 To receive messages via this interface, one must subscribe to one or more
 AMQP queues or exchanges. This is done with the #subscribe method, e.g.,
@@ -87,7 +87,7 @@ AMQP queues or exchanges. This is done with the #subscribe method, e.g.,
     puts "Received packet #{msg.inspect} via broker #{id}"
   end
 
-causes the queue name "my_queue" to be created on all currently connected
+causes the queue named "my_queue" to be created on all currently connected
 brokers in the AMQP durable fashion, meaning that it is preserved across
 restarts of the broker. The #subscribe call returns the ids of the brokers
 to which the subscribe request was submitted. The :ack option indicates to
@@ -104,7 +104,7 @@ To unsubscribe from a queue the #unsubscribe method is used.
 To simply create a queue or exchange without subscribing to it to receive
 messages, use #declare.
 
-= Publishing
+=== Publishing
 
 To publish a message to a queue or exchange, the #publish method is used, e.g.,
 
@@ -120,7 +120,7 @@ indicates that the broker is to return the message if the specified queue
 does not exist or is not being consumed, i.e., subscribed to by another
 application.
 
-= Serialization
+=== Serialization
 
 If a serializer is supplied when the HABrokerClient is constructed, its #load
 method is applied to all messages received from a broker, and its #dump method
@@ -134,7 +134,7 @@ properties, like :token, :type, and :from, and these are tracked so that if
 a message is returned as undeliverable, this information can be provided on
 the #non_delivery callback.
 
-= Message Return and Non-Delivery Callback
+=== Message Return and Non-Delivery Callback
 
 If a broker returns a message because it cannot be delivered to the intended
 recipient, e.g., because the option :mandatory was set and there are no consumers
@@ -152,25 +152,25 @@ The possible reasons for non-delivery are:
   "NO_CONSUMERS" - queue exists but it has no consumers
   "ACCESS_REFUSED" - queue not usable because broker is in the process of stopping service
 
-= Closing
+=== Closing
 
 When all connections to the brokers are to be closed, the #close method is used
 
-= Identities
+=== Identities
 
 A broker is given an identity of the form "rs-broker-<hostname>-<port>" where
 <hostname> is its host name, e.g., broker1.com, and <port> is the TCP port number
 used (5672 by default). This is used in the interface when a specific broker
 needs to be referred to, e.g., when communicating status.
 
-= Error Callbacks
+=== Error Callbacks
 
 When constructing the HABrokerClient the :exception_callback option can be
 specified to define the Proc to be activated on exception events. In addition
 an :exception_on_receive_callback Proc can be specified for activation when
 a message cannot be received.
 
-= Logging
+=== Logging
 
 To enable logging in the HABrokerClient set RightSupport::Log::Mixin.default_logger
 to the logger in use that supports the standard ruby Logger interface. Logging
@@ -180,15 +180,11 @@ is supplied.
 
 Detailed AMQP logging can be enabled by setting AMQP.logging = true.
 
-= Status and Stats
+=== Status and Stats
 
 The current status of all brokers can be obtained with the #status method.
 The operation statistics are obtained with the #stats method. This method
 has an option for resetting the statistics.
-
-== Work in Progress
-
-RightAMQP is work in progress, expect more documentation and examples in the near future.
 
 = ADDITIONAL RESOURCES
 

@@ -91,8 +91,7 @@ end
 #   delete_one_second
 #   thr.join
 #  
-#  __END__
-#  
+#
 #  [:publishing, Tue Jan 06 22:46:14 -0600 2009]
 #  ["every second", :received, Tue Jan 06 22:46:14 -0600 2009]
 #  ["every 2 seconds", :received, Tue Jan 06 22:46:14 -0600 2009]
