@@ -33,7 +33,11 @@ describe RightAMQP::BrokerClient do
 
   before(:each) do
     setup_logger
+    @message = "message"
+    @packet = flexmock("packet", :class => RequestMock, :to_s => true, :version => [12, 12]).by_default
     @serializer = flexmock("serializer")
+    @serializer.should_receive(:dump).and_return(@message).by_default
+    @serializer.should_receive(:load).with(@message).and_return(@packet).by_default
     @exceptions = flexmock("exceptions")
     @exceptions.should_receive(:track).never.by_default
     @connection = flexmock("connection")
@@ -112,8 +116,6 @@ describe RightAMQP::BrokerClient do
 
     before(:each) do
       @info = flexmock("info", :ack => true).by_default
-      @message = flexmock("message")
-      @packet = flexmock("packet", :class => RequestMock, :to_s => true, :version => [12, 12]).by_default
       @serializer.should_receive(:load).with(@message).and_return(@packet).by_default
       @direct = flexmock("direct")
       @fanout = flexmock("fanout")
@@ -280,12 +282,6 @@ describe RightAMQP::BrokerClient do
   end # when subscribing
 
   context "when receiving" do
-
-    before(:each) do
-      @message = flexmock("message")
-      @packet = flexmock("packet", :class => RequestMock, :to_s => true, :version => [12, 12]).by_default
-      @serializer.should_receive(:load).with(@message).and_return(@packet).once.by_default
-    end
 
     it "should unserialize the message, log it, and return it" do
       @logger.should_receive(:info).with(/Connecting/).once
@@ -491,8 +487,6 @@ describe RightAMQP::BrokerClient do
   context "when publishing" do
 
     before(:each) do
-      @message = flexmock("message")
-      @packet = flexmock("packet", :class => RequestMock, :to_s => true, :version => [12, 12]).by_default
       @direct = flexmock("direct")
       flexmock(MQ).should_receive(:new).with(@connection).and_return(@channel).by_default
     end
@@ -624,7 +618,7 @@ describe RightAMQP::BrokerClient do
     it "should display RE-SEND if the message being sent is a retry" do
       @logger.should_receive(:info).with(/Connecting/).once
       @logger.should_receive(:info).with(/^RE-SEND/).once
-      @packet = flexmock("packet", :class => RequestMock, :to_s => true, :tries => ["try1"], :version => [12, 12])
+      @packet.should_receive(:tries).and_return(["try1"]).once
       @channel.should_receive(:direct).with("exchange", {}).and_return(@direct).once
       @direct.should_receive(:publish).with(@message, {}).once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
@@ -649,10 +643,7 @@ describe RightAMQP::BrokerClient do
     end
 
     before(:each) do
-      @message = flexmock("message")
-      @packet = flexmock("packet", :class => RequestMock, :to_s => true, :version => [12, 12]).by_default
       @info = flexmock("info", :reply_text => "NO_CONSUMERS", :exchange => "exchange", :routing_key => "routing_key").by_default
-      @serializer.should_receive(:load).with(@message).and_return(@packet).by_default
     end
 
     it "should invoke block and log the return" do

@@ -102,6 +102,9 @@ module RightAMQP
     #     broker(BrokerClient):: Broker client
     #     connected_before(Boolean):: Whether was connected prior to this status change
     # existing(BrokerClient|nil):: Existing broker client for this address, or nil if none
+    #
+    # === Raise
+    # ArgumentError:: If serializer does not respond to :dump and :load
     def initialize(identity, address, serializer, exceptions, options, existing = nil)
       @options         = options
       @identity        = identity
@@ -109,6 +112,9 @@ module RightAMQP
       @port            = address[:port].to_i
       @index           = address[:index].to_i
       @alias           = "b#{@index}"
+      unless serializer.nil? || [:dump, :load].all? { |m| serializer.respond_to?(m) }
+        raise ArgumentError, "serializer must be a class/object that responds to :dump and :load"
+      end
       @serializer      = serializer
       @exceptions      = exceptions
       @queues          = []

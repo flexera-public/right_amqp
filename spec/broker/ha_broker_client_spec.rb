@@ -34,6 +34,11 @@ describe RightAMQP::HABrokerClient do
   before(:each) do
     setup_logger
     @exceptions = RightSupport::Stats::Exceptions
+    @message = "message"
+    @packet = flexmock("packet", :class => RequestMock, :to_s => true, :version => [12, 12]).by_default
+    @serializer = flexmock("serializer")
+    @serializer.should_receive(:dump).and_return(@message).by_default
+    @serializer.should_receive(:load).with(@message).and_return(@packet).by_default
   end
 
   describe "Context" do
@@ -155,7 +160,6 @@ describe RightAMQP::HABrokerClient do
   context "when initializing" do
 
     before(:each) do
-      @serializer = flexmock("Serializer")
       @identity = "rs-broker-localhost-5672"
       @address = {:host => "localhost", :port => 5672, :index => 0}
       @broker = flexmock("broker_client", :identity => @identity, :usable? => true)
@@ -276,8 +280,6 @@ describe RightAMQP::HABrokerClient do
   context "when identifying" do
 
     before(:each) do
-      @serializer = flexmock("Serializer")
-
       @address1 = {:host => "first", :port => 5672, :index => 0}
       @identity1 = "rs-broker-first-5672"
       @broker1 = flexmock("broker_client1", :identity => @identity1, :usable? => true, :return_message => true,
@@ -383,8 +385,6 @@ describe RightAMQP::HABrokerClient do
   context "when" do
 
     before(:each) do
-      @serializer = flexmock("Serializer")
-
       # Generate mocking for three BrokerClients
       # key index host     alias
       { 1 => [0, "first",  "b0"],
@@ -668,9 +668,6 @@ describe RightAMQP::HABrokerClient do
     context "publishing" do
 
       before(:each) do
-        @message = "message"
-        @packet = flexmock("packet", :class => RequestMock, :to_s => true, :version => [12, 12]).by_default
-        @serializer.should_receive(:dump).with(@packet).and_return(@message).by_default
         @broker1.should_receive(:publish).and_return(true).by_default
         @broker2.should_receive(:publish).and_return(true).by_default
         @broker3.should_receive(:publish).and_return(true).by_default
@@ -753,9 +750,6 @@ describe RightAMQP::HABrokerClient do
     context "returning" do
 
       before(:each) do
-        @message = "message"
-        @packet = flexmock("packet", :class => RequestMock, :to_s => true, :version => [12, 12]).by_default
-        @serializer.should_receive(:dump).with(@packet).and_return(@message).by_default
         @broker1.should_receive(:publish).and_return(true).by_default
         @broker2.should_receive(:publish).and_return(true).by_default
         @broker3.should_receive(:publish).and_return(true).by_default

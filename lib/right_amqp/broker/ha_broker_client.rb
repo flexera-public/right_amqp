@@ -130,12 +130,16 @@ module RightAMQP
     #     exception(Exception):: Exception that was raised
     #
     # === Raise
-    # ArgumentError:: If :host and :port are not matched lists
+    # ArgumentError:: If :host and :port are not matched lists or if serializer does not respond
+    #   to :dump and :load
     def initialize(serializer, options = {})
       @options = options.dup
       @options[:update_status_callback] = lambda { |b, c| update_status(b, c) }
       @options[:reconnect_interval] ||= RECONNECT_INTERVAL
       @connection_status = {}
+      unless serializer.nil? || [:dump, :load].all? { |m| serializer.respond_to?(m) }
+        raise ArgumentError, "serializer must be a class/object that responds to :dump and :load"
+      end
       @serializer = serializer
       @published = Published.new
       reset_stats
