@@ -20,6 +20,6 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-Dir[File.expand_path('../broker/*.rb', __FILE__)].each do |filename|
+Dir[File.expand_path('../ha_client/*.rb', __FILE__)].each do |filename|
   require filename
 end

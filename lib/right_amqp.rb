@@ -25,4 +25,4 @@ require 'right_support'
 
 require 'right_amqp/mq'
 require 'right_amqp/amqp'
-require 'right_amqp/broker'
+require 'right_amqp/ha_client'
