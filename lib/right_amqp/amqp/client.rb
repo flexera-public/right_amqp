@@ -34,6 +34,7 @@ module AMQP
                                               :insist => @settings[:insist])
 
         when Protocol::Connection::OpenOk
+          logger.debug("[amqp] Received open completion from broker #{@settings[:identity]}")
           succeed(self)
 
         when Protocol::Connection::Close
@@ -41,10 +42,12 @@ module AMQP
           STDERR.puts "#{method.reply_text} in #{Protocol.classes[method.class_id].methods[method.method_id]}"
 
         when Protocol::Connection::CloseOk
+          logger.debug("[amqp] Received close completion from broker #{@settings[:identity]}")
           @on_disconnect.call if @on_disconnect
         end
 
       when Frame::Heartbeat
+        logger.debug("[amqp] Received heartbeat from broker #{@settings[:identity]}")
         @last_server_heartbeat = Time.now
 
       end
@@ -108,6 +111,7 @@ module AMQP
     end
 
     def init_heartbeat
+      logger.debug("[amqp] Initializing heartbeat for broker #{@settings[:identity]} to #{@settings[:heartbeat]}")
       @last_server_heartbeat = Time.now
 
       @timer.cancel if @timer
@@ -115,9 +119,10 @@ module AMQP
         if connected?
           if @last_server_heartbeat < (Time.now - (@settings[:heartbeat] * 2))
             log "Reconnecting due to missing server heartbeats"
-            logger.warn("Reconnecting to broker #{@settings[:identity]} due to missing server heartbeats")
+            logger.info("[amqp] Reconnecting to broker #{@settings[:identity]} due to missing server heartbeats")
             reconnect(true)
           else
+            logger.debug("[amqp] Sending heartbeat to broker #{@settings[:identity]}")
             @last_server_heartbeat = Time.now
             send AMQP::Frame::Heartbeat.new, :channel => 0
           end
@@ -161,7 +166,7 @@ module AMQP
           process_frame frame
         end
       rescue Exception => e
-        logger.exception("Exception caught while processing AMQP frame, closing connection", e, :trace) unless ENV['IGNORE_AMQP_FAILURES']
+        logger.exception("Failed processing AMQP frame, closing connection", e, :trace) unless ENV['IGNORE_AMQP_FAILURES']
         close_connection
       end
     end
@@ -238,8 +243,8 @@ module AMQP
         end
       end
 
-      logger.warn("Attempting to reconnect to #{@settings[:identity]}")
       log 'reconnecting'
+      logger.info("[amqp] Attempting to reconnect to #{@settings[:identity]}")
       EM.reconnect(@settings[:host], @settings[:port], self)
     end
 
