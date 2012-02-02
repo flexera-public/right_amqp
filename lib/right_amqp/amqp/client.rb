@@ -166,8 +166,8 @@ module AMQP
           process_frame frame
         end
       rescue Exception => e
-        logger.exception("Failed processing AMQP frame, closing connection", e, :trace) unless ENV['IGNORE_AMQP_FAILURES']
-        close_connection
+        logger.exception("[amqp] Failed processing frame, closing connection", e, :trace) unless ENV['IGNORE_AMQP_FAILURES']
+        failed
       end
     end
 
@@ -257,11 +257,19 @@ module AMQP
       @connection_status = blk
     end
 
+    def failed
+      @connection_status.call(:failed) if @connection_status
+      @failed = true
+      close_connection
+    end
+
     private
 
     def disconnected
-      @connection_status.call(:disconnected) if @connection_status
-      reconnect
+      unless @failed
+        @connection_status.call(:disconnected) if @connection_status
+        reconnect
+      end
     end
 
     def log *args

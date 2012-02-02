@@ -116,6 +116,7 @@ end
 class MQ
   include AMQP
   include EM::Deferrable
+  include RightSupport::Log::Mixin
 
   # Returns a new channel. A channel is a bidirectional virtual
   # connection between the client and the AMQP server. Elsewhere in the
@@ -257,11 +258,15 @@ class MQ
   def send *args
     conn.callback{ |c|
       (@_send_mutex ||= Mutex.new).synchronize do
-        args.each do |data|
-          data.ticket = @ticket if @ticket and data.respond_to? :ticket=
-          log :sending, data
-          raise ::AMQP::Error, "Attempting to send with no open channels" if @channel.nil? || c.channels.empty?
-          c.send data, :channel => @channel
+        if @channel.nil? || c.channels.empty?
+          logger.error("[amqp] Failed to send data, no open channels, closing connection")
+          conn.failed
+        else
+          args.each do |data|
+            data.ticket = @ticket if @ticket and data.respond_to? :ticket=
+            log :sending, data
+            c.send data, :channel => @channel
+          end
         end
       end
     }
