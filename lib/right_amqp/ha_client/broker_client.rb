@@ -621,10 +621,12 @@ module RightAMQP
     # (Packet|nil):: Unserialized packet or nil if not of right type or if there is an exception
     def receive(queue, message, options = {})
       begin
+        received_at = Time.now.to_f
         packet = @serializer.load(message)
         if options.key?(packet.class)
           unless options[:no_log] && logger.level != :debug
             re = "RE-" if packet.respond_to?(:tries) && !packet.tries.empty?
+            packet.received_at = received_at if packet.respond_to?(:received_at)
             log_filter = options[packet.class] unless logger.level == :debug
             logger.info("#{re}RECV #{@alias} #{packet.to_s(log_filter, :recv_version)} #{options[:log_data]}")
           end
