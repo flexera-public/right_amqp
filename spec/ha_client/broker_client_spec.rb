@@ -166,7 +166,7 @@ describe RightAMQP::BrokerClient do
     end
 
     it "should return true if subscribed successfully" do
-      @bind.should_receive(:subscribe).and_yield(@message).once
+      @bind.should_receive(:subscribe).and_yield(@info, @message).once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
       result = broker.subscribe({:name => "queue"}, {:type => :direct, :name => "exchange"},
                                  RequestMock => true) {|b, p| p.should == @packet}
@@ -175,7 +175,7 @@ describe RightAMQP::BrokerClient do
 
     it "should return true if already subscribed and not try to resubscribe" do
       @queue.should_receive(:name).and_return("queue").once
-      @bind.should_receive(:subscribe).and_yield(@message).once
+      @bind.should_receive(:subscribe).and_yield(@info, @message).once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
       result = broker.subscribe({:name => "queue"}, {:type => :direct, :name => "exchange"},
                                  RequestMock => true) {|b, p| p.should == @packet}
@@ -207,7 +207,7 @@ describe RightAMQP::BrokerClient do
       @logger.should_receive(:info).with(/Subscribing/).once
       @logger.should_receive(:info).with(/RECV/).once
       @serializer.should_receive(:load).with(@message).and_return(@packet).once
-      @bind.should_receive(:subscribe).and_yield(@message).once
+      @bind.should_receive(:subscribe).and_yield(@info, @message).once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
       broker.__send__(:update_status, :ready)
       broker.subscribe({:name => "queue"}, {:type => :direct, :name => "exchange"},
@@ -220,7 +220,7 @@ describe RightAMQP::BrokerClient do
       @logger.should_receive(:error).with(/Failed executing block/).once
       @exceptions.should_receive(:track).once
       @serializer.should_receive(:load).with(@message).and_return(@packet).once
-      @bind.should_receive(:subscribe).and_yield(@message).once
+      @bind.should_receive(:subscribe).and_yield(@info, @message).once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
       broker.__send__(:update_status, :ready)
       result = broker.subscribe({:name => "queue"}, {:type => :direct, :name => "exchange"},
@@ -246,7 +246,7 @@ describe RightAMQP::BrokerClient do
       @logger.should_receive(:info).with(/Connecting/).once
       @logger.should_receive(:info).with(/Subscribing/).once
       @logger.should_receive(:debug).with(/nil message ignored/).once
-      @bind.should_receive(:subscribe).and_yield("nil").once
+      @bind.should_receive(:subscribe).and_yield(@info, "nil").once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
       broker.__send__(:update_status, :ready)
       called = 0
@@ -258,12 +258,26 @@ describe RightAMQP::BrokerClient do
       @logger.should_receive(:info).with(/Connecting/).once
       @logger.should_receive(:info).with(/Subscribing/).once
       @logger.should_receive(:info).with(/^RECV/).never
-      @bind.should_receive(:subscribe).and_yield(@message).once
+      @bind.should_receive(:subscribe).and_yield(@info, @message).once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
       broker.__send__(:update_status, :ready)
       broker.subscribe({:name => "queue"}, {:type => :direct, :name => "exchange"}, :no_unserialize => true) do |b, m|
         b.should == "rs-broker-localhost-5672"
         m.should == @message
+      end
+    end
+
+    it "should pass header with message if callback requires it" do
+      @logger.should_receive(:info).with(/Connecting/).once
+      @logger.should_receive(:info).with(/Subscribing/).once
+      @logger.should_receive(:info).with(/^RECV/).never
+      @bind.should_receive(:subscribe).and_yield(@info, @message).once
+      broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
+      broker.__send__(:update_status, :ready)
+      broker.subscribe({:name => "queue"}, {:type => :direct, :name => "exchange"}, :no_unserialize => true) do |b, m, h|
+        b.should == "rs-broker-localhost-5672"
+        m.should == @message
+        h.should == @info
       end
     end
 
