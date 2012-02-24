@@ -192,6 +192,7 @@ module RightAMQP
     # Block with following parameters to be called each time exchange matches a message to the queue:
     #   identity(String):: Serialized identity of broker delivering the message
     #   message(Packet|String):: Message received, which is unserialized unless :no_unserialize was specified
+    #   header(AMQP::Protocol::Header):: Message header (optional block parameter)
     #
     # === Return
     # (Boolean):: true if subscribe successfully or if already subscribed, otherwise false
@@ -222,18 +223,18 @@ module RightAMQP
           q = binding
         end
         if options[:ack]
-          q.subscribe(:ack => true) do |info, message|
+          q.subscribe(:ack => true) do |header, message|
             begin
               # Ack now before processing to avoid risk of duplication after a crash
-              info.ack
+              header.ack
               if options[:no_unserialize] || @serializer.nil?
-                execute_callback(blk, @identity, message)
+                execute_callback(blk, @identity, message, header)
               elsif message == "nil"
                 # This happens as part of connecting an instance agent to a broker prior to version 13
                 logger.debug("RECV #{@alias} nil message ignored")
               elsif
                 packet = receive(queue[:name], message, options)
-                execute_callback(blk, @identity, packet) if packet
+                execute_callback(blk, @identity, packet, header) if packet
               end
               true
             rescue Exception => e
@@ -244,16 +245,16 @@ module RightAMQP
             end
           end
         else
-          q.subscribe do |message|
+          q.subscribe do |header, message|
             begin
               if options[:no_unserialize] || @serializer.nil?
-                execute_callback(blk, @identity, message)
+                execute_callback(blk, @identity, message, header)
               elsif message == "nil"
                 # This happens as part of connecting an instance agent to a broker
                 logger.debug("RECV #{@alias} nil message ignored")
               elsif
                 packet = receive(queue[:name], message, options)
-                execute_callback(blk, @identity, packet) if packet
+                execute_callback(blk, @identity, packet, header) if packet
               end
               true
             rescue Exception => e
@@ -681,7 +682,7 @@ module RightAMQP
     # === Return
     # (Object):: Callback return value
     def execute_callback(callback, *args)
-      callback.call(*args) if callback
+      (callback.arity == 2 ? callback.call(*args[0, 2]) : callback.call(*args)) if callback
     end
 
   end # BrokerClient

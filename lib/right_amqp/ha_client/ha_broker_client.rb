@@ -480,6 +480,7 @@ module RightAMQP
     # Block with following parameters to be called each time exchange matches a message to the queue:
     #   identity(String):: Serialized identity of broker delivering the message
     #   message(Packet|String):: Message received, which is unserialized unless :no_unserialize was specified
+    #   header(AMQP::Protocol::Header):: Message header (optional block parameter)
     #
     # === Return
     # identities(Array):: Identity of brokers where successfully subscribed
