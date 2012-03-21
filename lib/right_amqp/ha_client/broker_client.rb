@@ -111,7 +111,8 @@ module RightAMQP
       @host            = address[:host]
       @port            = address[:port].to_i
       @index           = address[:index].to_i
-      @alias           = "b#{@index}"
+      set_alias(@index)
+
       unless serializer.nil? || [:dump, :load].all? { |m| serializer.respond_to?(m) }
         raise ArgumentError, "serializer must be a class/object that responds to :dump and :load"
       end
@@ -132,6 +133,17 @@ module RightAMQP
         @retries = existing.retries
         update_failure if @status == :failed
       end
+    end
+
+    # Set alias for broker for use in logs
+    #
+    # === Parameters
+    # index(Integer):: Unique index for broker within given set
+    #
+    # === Return
+    # (String):: Broker alias
+    def set_alias(index)
+      @alias = "b#{index}"
     end
 
     # Determine whether the broker connection is usable, i.e., connecting or confirmed connected
