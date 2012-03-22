@@ -258,7 +258,8 @@ module RightAMQP
     #
     # === Returns
     # (String):: Broker serialized identity
-    def self.identity(host, port = ::AMQP::PORT)
+    def self.identity(host, port = nil)
+      port ||= ::AMQP::PORT
       "rs-broker-#{host.gsub('-', '~')}-#{port.to_i}"
     end
 
