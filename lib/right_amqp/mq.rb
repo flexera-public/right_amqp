@@ -146,6 +146,7 @@ class MQ
     }
   end
   attr_reader :channel, :connection
+  alias :conn :connection
   
   # May raise a MQ::Error exception when the frame payload contains a
   # Protocol::Channel::Close object.
@@ -838,9 +839,6 @@ class MQ
     pp args
     puts
   end
-
-  attr_reader :connection
-  alias :conn :connection
 end
 
 #-- convenience wrapper (read: HACK) for thread-local MQ object
