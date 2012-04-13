@@ -14,10 +14,10 @@ group :custom do
 end
 
 group :development do
-  gem "rake",        "0.8.7"
-  gem "ruby-debug",  ">= 0.10"
-  gem 'rdoc',        ">= 2.4.2"
-  gem "rspec",       "~> 2.5"
-  gem "flexmock",    "~> 0.9"
+  gem "rake",         "0.9.2.2"
+  gem "ruby-debug19", :platforms => "mri_19"
+  gem "rdoc",         "~> 3.12"
+  gem "rspec",        "~> 2.8"
+  gem "flexmock",     "~> 0.9"
   gem "bacon"
 end
