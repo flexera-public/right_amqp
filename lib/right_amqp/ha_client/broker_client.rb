@@ -179,16 +179,17 @@ module RightAMQP
     # queue(Hash):: AMQP queue being subscribed with keys :name and :options,
     #   which are the standard AMQP ones plus
     #     :no_declare(Boolean):: Whether to skip declaring this queue on the broker
-    #       to cause its creation; for use when client does not have permission to create or
+    #       to cause its creation; for use when caller does not have permission to create or
     #       knows the queue already exists and wants to avoid declare overhead
     # exchange(Hash|nil):: AMQP exchange to subscribe to with keys :type, :name, and :options,
     #   nil means use empty exchange by directly subscribing to queue; the :options are the
     #   standard AMQP ones plus
     #     :no_declare(Boolean):: Whether to skip declaring this exchange on the broker
-    #       to cause its creation; for use when client does not have create permission or
+    #       to cause its creation; for use when caller does not have create permission or
     #       knows the exchange already exists and wants to avoid declare overhead
     # options(Hash):: Subscribe options:
-    #   :ack(Boolean):: Explicitly acknowledge received messages to AMQP
+    #   :ack(Boolean):: Whether caller takes responsibility for explicitly acknowledging each
+    #     message received, defaults to implicit acknowledgement in AMQP as part of message receipt
     #   :no_unserialize(Boolean):: Do not unserialize message, this is an escape for special
     #     situations like enrollment, also implicitly disables receive filtering and logging;
     #     this option is implicitly invoked if initialize without a serializer
@@ -234,47 +235,27 @@ module RightAMQP
           end
           q = binding
         end
-        if options[:ack]
-          q.subscribe(:ack => true) do |header, message|
-            begin
-              # Ack now before processing to avoid risk of duplication after a crash
-              header.ack
-              if options[:no_unserialize] || @serializer.nil?
-                execute_callback(blk, @identity, message, header)
-              elsif message == "nil"
-                # This happens as part of connecting an instance agent to a broker prior to version 13
-                logger.debug("RECV #{@alias} nil message ignored")
-              elsif
-                packet = receive(queue[:name], message, options)
-                execute_callback(blk, @identity, packet, header) if packet
+        q.subscribe(options[:ack] ? {:ack => true} : {}) do |header, message|
+          begin
+            if options[:no_unserialize] || @serializer.nil?
+              execute_callback(blk, @identity, message, header)
+            elsif message == "nil"
+              # This happens as part of connecting an instance agent to a broker prior to version 13
+              header.ack if options[:ack]
+              logger.debug("RECV #{@alias} nil message ignored")
+            else
+              packet = receive(queue[:name], message, options)
+              if packet
+                execute_callback(blk, @identity, packet, header)
+              elsif options[:ack]
+                header.ack
               end
-              true
-            rescue Exception => e
-              logger.exception("Failed executing block for message from queue #{queue.inspect}#{to_exchange} " +
-                               "on broker #{@alias}", e, :trace)
-              @exceptions.track("receive", e)
-              false
             end
-          end
-        else
-          q.subscribe do |header, message|
-            begin
-              if options[:no_unserialize] || @serializer.nil?
-                execute_callback(blk, @identity, message, header)
-              elsif message == "nil"
-                # This happens as part of connecting an instance agent to a broker
-                logger.debug("RECV #{@alias} nil message ignored")
-              elsif
-                packet = receive(queue[:name], message, options)
-                execute_callback(blk, @identity, packet, header) if packet
-              end
-              true
-            rescue Exception => e
-              logger.exception("Failed executing block for message from queue #{queue.inspect}#{to_exchange} " +
-                               "on broker #{@alias}", e, :trace)
-              @exceptions.track("receive", e)
-              false
-            end
+          rescue Exception => e
+            header.ack if options[:ack]
+            logger.exception("Failed executing block for message from queue #{queue.inspect}#{to_exchange} " +
+                             "on broker #{@alias}", e, :trace)
+            @exceptions.track("receive", e)
           end
         end
       rescue Exception => e
@@ -342,7 +323,7 @@ module RightAMQP
     # exchange(Hash):: AMQP exchange to subscribe to with keys :type, :name, and :options,
     #   which are the standard AMQP ones plus
     #     :no_declare(Boolean):: Whether to skip declaring this exchange or queue on the broker
-    #       to cause its creation; for use when client does not have create permission or
+    #       to cause its creation; for use when caller does not have create permission or
     #       knows the object already exists and wants to avoid declare overhead
     #     :declare(Boolean):: Whether to delete this exchange or queue from the AMQP cache
     #       to force it to be declared on the broker and thus be created if it does not exist
