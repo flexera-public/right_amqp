@@ -360,7 +360,7 @@ module RightAMQP
     # === Return
     # (Array):: Serialized identity of unusable brokers
     def unusable
-      @brokers.map { |b| b.identity } - each_usable.map { |b| b.identity }
+      all - usable
     end
 
     # Get serialized identity of all brokers
@@ -466,7 +466,8 @@ module RightAMQP
     #       to cause its creation; for use when client does not have create permission or
     #       knows the exchange already exists and wants to avoid declare overhead
     # options(Hash):: Subscribe options:
-    #   :ack(Boolean):: Explicitly acknowledge received messages to AMQP
+    #   :ack(Boolean):: Whether client takes responsibility for explicitly acknowledging each
+    #     message received, defaults to implicit acknowledgement in AMQP as part of message receipt
     #   :no_unserialize(Boolean):: Do not unserialize message, this is an escape for special
     #     situations like enrollment, also implicitly disables receive filtering and logging;
     #     this option is implicitly invoked if initialize without a serializer
