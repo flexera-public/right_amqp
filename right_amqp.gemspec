@@ -38,7 +38,7 @@ Gem::Specification.new do |spec|
   spec.require_path = 'lib'
 
   spec.add_dependency('right_support', '~> 1.2')
-  spec.add_dependency('eventmachine', '~> 0.12.10')
+  spec.add_dependency('eventmachine', '>= 0.12.10')
 
   spec.description = <<-EOF
 RightAMQP provides a high availability client for interfacing with the

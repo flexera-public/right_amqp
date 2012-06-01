@@ -10,7 +10,7 @@ gem 'right_support', '~> 1.2', :git => 'git@github.com:rightscale/right_support.
 # Lock eventmachine to a published and well-tested version to avoid picking up
 # proprietary builds that happen to be installed locally
 group :custom do
-  gem "eventmachine", "0.12.11.6"
+  gem "eventmachine", "1.0.0.beta.4", :git => 'https://github.com/eventmachine/eventmachine.git', :ref => '9bb885c035ac75e80d74da30829c9d2449dcf78d'
 end
 
 group :development do
