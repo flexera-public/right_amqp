@@ -209,7 +209,7 @@ module RightAMQP
     #
     # === Return
     # (Boolean):: true if subscribe successfully or if already subscribed, otherwise false
-    def subscribe(queue, exchange = nil, options = {}, &blk)
+    def subscribe(queue, exchange = nil, options = {}, &block)
       return false unless usable?
       return true unless @queues.select { |q| q.name == queue[:name] }.empty?
 
@@ -238,18 +238,27 @@ module RightAMQP
         q.subscribe(options[:ack] ? {:ack => true} : {}) do |header, message|
           begin
             if options[:no_unserialize] || @serializer.nil?
-              execute_callback(blk, @identity, message, header)
+              execute_callback(block, @identity, message, header)
             elsif message == "nil"
               # This happens as part of connecting an instance agent to a broker prior to version 13
               header.ack if options[:ack]
               logger.debug("RECV #{@alias} nil message ignored")
+            elsif @serializer.respond_to?(:async_enabled?) && @serializer.async_enabled?
+              receive(queue[:name], message, options) do |packet|
+                begin
+                  execute_callback(block, @identity, packet, header) if packet
+                  header.ack if options[:ack]
+                rescue Exception => e
+                  header.ack if options[:ack]
+                  logger.exception("Failed executing block for message from queue #{queue.inspect}#{to_exchange} " +
+                                   "on broker #{@alias}", e, :trace)
+                  @exceptions.track("receive", e)
+                end
+              end
             else
               packet = receive(queue[:name], message, options)
-              if packet
-                execute_callback(blk, @identity, packet, header)
-              elsif options[:ack]
-                header.ack
-              end
+              execute_callback(block, @identity, packet, header) if packet
+              header.ack if options[:ack]
             end
           rescue Exception => e
             header.ack if options[:ack]
@@ -258,6 +267,7 @@ module RightAMQP
             @exceptions.track("receive", e)
           end
         end
+        true
       rescue Exception => e
         logger.exception("Failed subscribing queue #{queue.inspect}#{to_exchange} on broker #{@alias}", e, :trace)
         @exceptions.track("subscribe", e)
@@ -276,17 +286,17 @@ module RightAMQP
     #
     # === Return
     # true:: Always return true
-    def unsubscribe(queue_names, &blk)
+    def unsubscribe(queue_names, &block)
       if usable?
         @queues.each do |q|
           if queue_names.include?(q.name)
             begin
               logger.info("[stop] Unsubscribing queue #{q.name} on broker #{@alias}")
-              q.unsubscribe { blk.call if blk }
+              q.unsubscribe { block.call if block }
             rescue Exception => e
               logger.exception("Failed unsubscribing queue #{q.name} on broker #{@alias}", e, :trace)
               @exceptions.track("unsubscribe", e)
-              blk.call if blk
+              block.call if block
             end
           end
         end
@@ -457,7 +467,7 @@ module RightAMQP
     #
     # === Return
     # true:: Always return true
-    def close(propagate = true, normal = true, log = true, &blk)
+    def close(propagate = true, normal = true, log = true)
       final_status = normal ? :closed : :failed
       if ![:closed, :failed].include?(@status)
         begin
@@ -611,12 +621,57 @@ module RightAMQP
     #   :log_data(String):: Additional data to display at end of log entry
     #   :no_log(Boolean):: Disable receive logging unless debug level
     #
+    # === Block
+    # Optional block that is yielded the result that is otherwise returned
+    #
     # === Return
     # (Packet|nil):: Unserialized packet or nil if not of right type or if there is an exception
-    def receive(queue, message, options = {})
+    def receive(queue, message, options = {}, &block)
       begin
         received_at = Time.now.to_f
-        packet = @serializer.load(message)
+        if block_given?
+          @serializer.load(message) do |result|
+            begin
+              if result.is_a?(Exception)
+                yield(nil)
+                handle_serialization_error(result, queue, message)
+              else
+                yield(validate_packet(queue, message, result, received_at, options))
+              end
+            rescue Exception => e
+              yield(nil)
+              handle_serialization_error(e, queue, message)
+            end
+          end
+          nil
+        else
+          validate_packet(queue, message, @serializer.load(message), received_at, options)
+        end
+      rescue Exception => e
+        yield(nil) if block_given?
+        handle_serialization_error(e, queue, message)
+        nil
+      end
+    end
+
+    # Check that packet is an acceptable type and then log it
+    #
+    # === Parameters
+    # queue(String):: Name of queue
+    # message(String):: Serialized packet
+    # packet(Packet):: Unserialized packet
+    # received_at(Float):: Time when message received
+    # options(Hash):: Subscribe options:
+    #   (packet class)(Array(Symbol)):: Filters to be applied in to_s when logging packet to :info,
+    #     only packet classes specified are accepted, others are not processed but are logged with error
+    #   :category(String):: Packet category description to be used in error messages
+    #   :log_data(String):: Additional data to display at end of log entry
+    #   :no_log(Boolean):: Disable receive logging unless debug level
+    #
+    # === Return
+    # (Packet|nil):: Unserialized packet or nil if not of right type or if there is an exception
+    def validate_packet(queue, message, packet, received_at, options)
+      begin
         if options.key?(packet.class)
           unless options[:no_log] && logger.level != :debug
             re = "RE-" if packet.respond_to?(:tries) && !packet.tries.empty?
@@ -631,13 +686,26 @@ module RightAMQP
           nil
         end
       rescue Exception => e
-        # TODO Taking advantage of Serializer knowledge here even though out of scope
-        trace = e.class.name =~ /SerializationError/ ? :caller : :trace
-        logger.exception("Failed receiving from queue #{queue} on #{@alias}", e, trace)
-        @exceptions.track("receive", e)
-        @options[:exception_on_receive_callback].call(message, e) if @options[:exception_on_receive_callback]
+        handle_serialization_error(e, queue, message)
         nil
       end
+    end
+
+    # Handle serialization error
+    #
+    # === Parameters
+    # exception(Exception):: Exception raised
+    # queue(String):: Name of queue
+    # message(String):: Serialized packet
+    #
+    # === Return
+    # (Packet|nil):: Unserialized packet or nil if not of right type or if there is an exception
+    def handle_serialization_error(exception, queue, message)
+      # TODO Taking advantage of Serializer knowledge here even though out of scope
+      trace = exception.class.name =~ /SerializationError/ ? :caller : :trace
+      logger.exception("Failed receiving from queue #{queue} on #{@alias}", exception, trace)
+      @exceptions.track("receive", exception)
+      @options[:exception_on_receive_callback].call(message, exception) if @options[:exception_on_receive_callback]
     end
 
     # Make status updates for connect success

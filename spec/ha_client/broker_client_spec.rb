@@ -225,7 +225,6 @@ describe RightAMQP::BrokerClient do
       broker.__send__(:update_status, :ready)
       result = broker.subscribe({:name => "queue"}, {:type => :direct, :name => "exchange"},
                                 :ack => true, RequestMock => nil) {|b, p| raise Exception}
-      result.should be_false
     end
 
     it "should ignore 'nil' message when using ack and then ack" do
@@ -307,6 +306,42 @@ describe RightAMQP::BrokerClient do
       broker.__send__(:update_status, :ready)
       result = broker.subscribe({:name => "queue"}, {:type => :direct, :name => "exchange"}) {|b, p|}
       result.should be_false
+    end
+
+    context "and receiving asynchronously" do
+
+      before(:each) do
+        @logger.should_receive(:info).with(/Connecting/).once
+        @logger.should_receive(:info).with(/Subscribing/).once
+        @logger.should_receive(:info).with(/RECV/).once
+        @serializer.should_receive(:async_enabled?).and_return(true)
+        @serializer.should_receive(:load).with(@message, Proc).and_yield(@packet).once
+        @bind.should_receive(:subscribe).and_yield(@header, @message).once
+        @broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
+        @broker.__send__(:update_status, :ready)
+      end
+
+      it "should receive message" do
+        @header.should_receive(:ack).never
+        @broker.subscribe({:name => "queue"}, {:type => :direct, :name => "exchange"},
+                          RequestMock => nil) {|b, p| p.class.should == RequestMock}
+      end
+
+      it "should ack if option set" do
+        @header.should_receive(:ack).once
+        @broker.subscribe({:name => "queue"}, {:type => :direct, :name => "exchange"},
+                          :ack => true, RequestMock => nil) {|b, p| p.class.should == RequestMock}
+      end
+
+      it "should log exception if receive block fails and ack if option set" do
+        @logger.should_receive(:error).with(/Failed executing block for message/).once
+        @exceptions.should_receive(:track).once
+        @header.should_receive(:ack).once
+        flexmock(@broker).should_receive(:execute_callback).and_raise(Exception)
+        @broker.subscribe({:name => "queue"}, {:type => :direct, :name => "exchange"},
+                          :ack => true, RequestMock => nil) {|b, p| p.class.should == RequestMock}
+      end
+
     end
 
   end # when subscribing
@@ -406,6 +441,55 @@ describe RightAMQP::BrokerClient do
       @packet.should_receive(:tries).and_return(["try1"]).once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
       broker.__send__(:receive, "queue", @message, RequestMock => nil).should == @packet
+    end
+
+    context "asynchronously" do
+
+      it "should unserialize the message, log it, and yield it" do
+        @logger.should_receive(:info).with(/Connecting/).once
+        @logger.should_receive(:info).with(/^RECV/).once
+        @serializer.should_receive(:load).with(@message, Proc).and_yield(@packet).once
+        broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
+        called = 0
+        result = broker.__send__(:receive, "queue", @message, RequestMock => nil) { |r| called += 1; r.should == @packet }
+        result.should be_nil
+        called.should == 1
+      end
+
+      it "should log serialization exception received as result and yield nil" do
+        @logger.should_receive(:info).with(/Connecting/).once
+        @logger.should_receive(:error).with(/Failed receiving from queue/).once
+        @serializer.should_receive(:load).with(@message, Proc).and_yield(Exception).once
+        @exceptions.should_receive(:track).once
+        broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
+        called = 0
+        result = broker.__send__(:receive, "queue", @message, RequestMock => nil) { |r| called += 1; r.should be_nil }
+        result.should be_nil
+        called.should == 1
+      end
+
+      it "should log serialization error and yield nil" do
+        @logger.should_receive(:info).with(/Connecting/).once
+        @logger.should_receive(:error).with(/Failed receiving from queue/).once
+        @serializer.should_receive(:load).with(@message, Proc).and_raise(Exception).once
+        @exceptions.should_receive(:track).once
+        broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
+        called = 0
+        result = broker.__send__(:receive, "queue", @message, RequestMock => nil) { |r| called += 1; r.should be_nil }
+        result.should be_nil
+        called.should == 1
+      end
+
+      it "should log a warning if the message is not of the right type and yield nil" do
+        @logger.should_receive(:warning).with(/Received invalid.*packet type/).once
+        @serializer.should_receive(:load).with(@message, Proc).and_yield(@packet).once
+        broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
+        called = 0
+        result = broker.__send__(:receive, "queue", @message) { |r| called += 1; r.should be_nil }
+        result.should be_nil
+        called.should == 1
+      end
+
     end
 
   end # when receiving
