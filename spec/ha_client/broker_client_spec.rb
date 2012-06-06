@@ -161,7 +161,7 @@ describe RightAMQP::BrokerClient do
     it "should store queues for future reference" do
       @bind.should_receive(:subscribe).once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
-      broker.subscribe({:name => "queue"}, {:type => :direct, :name => "exchange"})
+      broker.subscribe({:name => "queue"}, {:type => :direct, :name => "exchange"}) {|_, _|}
       broker.queues.should == [@queue]
     end
 
@@ -198,25 +198,59 @@ describe RightAMQP::BrokerClient do
       @bind.should_receive(:subscribe).never
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
       broker.__send__(:update_status, :disconnected)
-      broker.subscribe({:name => "queue"}).should be_false
+      broker.subscribe({:name => "queue"}) { |_, _| }.should be_false
     end
- 
-    it "should receive message causing it to be unserialized and logged" do
+
+    it "should raise if no block supplied" do
+      broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
+      lambda { broker.subscribe({:name => "queue"}) }.should raise_error(ArgumentError)
+    end
+
+    it "should receive message" do
       @logger.should_receive(:info).with(/Connecting/).once
       @logger.should_receive(:info).with(/Subscribing/).once
-      @logger.should_receive(:info).with(/RECV/).once
-      @serializer.should_receive(:load).with(@message).and_return(@packet).once
       @bind.should_receive(:subscribe).and_yield(@header, @message).once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
+      subscribe_options = {RequestMock => nil}
+      flexmock(broker).should_receive(:receive).with("queue", @header, @message, subscribe_options, Proc).once
       broker.__send__(:update_status, :ready)
       broker.subscribe({:name => "queue"}, {:type => :direct, :name => "exchange"},
-                       RequestMock => nil) {|b, p| p.class.should == RequestMock}
+                       subscribe_options) {|b, p| p.class.should == RequestMock}
+    end
+
+    it "should receive message using fiber pool specified as subscribe option" do
+      @logger.should_receive(:info).with(/Connecting/).once
+      @logger.should_receive(:info).with(/Subscribing/).once
+      @bind.should_receive(:subscribe).and_yield(@header, @message).once
+      fiber_pool = flexmock("fiber pool")
+      fiber_pool.should_receive(:spawn).and_yield.once
+      broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
+      subscribe_options = {RequestMock => nil, :fiber_pool => fiber_pool}
+      flexmock(broker).should_receive(:receive).with("queue", @header, @message, subscribe_options, Proc).once
+      broker.__send__(:update_status, :ready)
+      broker.subscribe({:name => "queue"}, {:type => :direct, :name => "exchange"},
+                       subscribe_options) {|b, p| p.class.should == RequestMock}
+    end
+
+    it "should receive message using fiber pool specified as constructor option" do
+      @logger.should_receive(:info).with(/Connecting/).once
+      @logger.should_receive(:info).with(/Subscribing/).once
+      @bind.should_receive(:subscribe).and_yield(@header, @message).once
+      fiber_pool = flexmock("fiber pool")
+      fiber_pool.should_receive(:spawn).and_yield.once
+      broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions,
+                                           @options.merge(:fiber_pool => fiber_pool))
+      subscribe_options = {RequestMock => nil}
+      flexmock(broker).should_receive(:receive).with("queue", @header, @message, subscribe_options, Proc).once
+      broker.__send__(:update_status, :ready)
+      broker.subscribe({:name => "queue"}, {:type => :direct, :name => "exchange"},
+                       subscribe_options) {|b, p| p.class.should == RequestMock}
     end
 
     it "should receive message and log exception if subscribe block fails and then ack if option set" do
       @logger.should_receive(:info).with(/Connecting/).once
       @logger.should_receive(:info).with(/Subscribing/).once
-      @logger.should_receive(:error).with(/Failed executing block/).once
+      @logger.should_receive(:error).with(/Failed receiving message/).once
       @exceptions.should_receive(:track).once
       @serializer.should_receive(:load).with(@message).and_return(@packet).once
       @header.should_receive(:ack).once
@@ -228,75 +262,6 @@ describe RightAMQP::BrokerClient do
       result.should be_false
     end
 
-    it "should ignore 'nil' message when using ack and then ack" do
-      @logger.should_receive(:level).and_return(:debug)
-      @logger.should_receive(:info).with(/Connecting/).once
-      @logger.should_receive(:info).with(/Subscribing/).once
-      @logger.should_receive(:debug).with(/nil message ignored/).once
-      @header.should_receive(:ack).once
-      @bind.should_receive(:subscribe).and_yield(@header, "nil").once
-      broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
-      broker.__send__(:update_status, :ready)
-      called = 0
-      broker.subscribe({:name => "queue"}, {:type => :direct, :name => "exchange"}, :ack => true) { |b, m| called += 1 }
-      called.should == 0
-    end
-
-    it "should ignore 'nil' message when not using ack" do
-      @logger.should_receive(:level).and_return(:debug)
-      @logger.should_receive(:info).with(/Connecting/).once
-      @logger.should_receive(:info).with(/Subscribing/).once
-      @logger.should_receive(:debug).with(/nil message ignored/).once
-      @header.should_receive(:ack).never
-      @bind.should_receive(:subscribe).and_yield(@header, "nil").once
-      broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
-      broker.__send__(:update_status, :ready)
-      called = 0
-      broker.subscribe({:name => "queue"}, {:type => :direct, :name => "exchange"}) { |b, m| called += 1 }
-      called.should == 0
-    end
-
-    it "should not make callback if received message is nil but then ack if option set" do
-      @logger.should_receive(:level).and_return(:debug)
-      @logger.should_receive(:info).with(/Connecting/).once
-      @logger.should_receive(:info).with(/Subscribing/).once
-      @header.should_receive(:ack).once
-      @bind.should_receive(:subscribe).and_yield(@header, @message).once
-      broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
-      broker.__send__(:update_status, :ready)
-      flexmock(broker).should_receive(:receive).and_return(nil).once
-      called = 0
-      broker.subscribe({:name => "queue"}, {:type => :direct, :name => "exchange"}, :ack => true) { |b, m| called += 1 }
-      called.should == 0
-    end
-
-    it "should not unserialize the message if requested" do
-      @logger.should_receive(:info).with(/Connecting/).once
-      @logger.should_receive(:info).with(/Subscribing/).once
-      @logger.should_receive(:info).with(/^RECV/).never
-      @bind.should_receive(:subscribe).and_yield(@header, @message).once
-      broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
-      broker.__send__(:update_status, :ready)
-      broker.subscribe({:name => "queue"}, {:type => :direct, :name => "exchange"}, :no_unserialize => true) do |b, m|
-        b.should == "rs-broker-localhost-5672"
-        m.should == @message
-      end
-    end
-
-    it "should pass header with message if callback requires it" do
-      @logger.should_receive(:info).with(/Connecting/).once
-      @logger.should_receive(:info).with(/Subscribing/).once
-      @logger.should_receive(:info).with(/^RECV/).never
-      @bind.should_receive(:subscribe).and_yield(@header, @message).once
-      broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
-      broker.__send__(:update_status, :ready)
-      broker.subscribe({:name => "queue"}, {:type => :direct, :name => "exchange"}, :no_unserialize => true) do |b, m, h|
-        b.should == "rs-broker-localhost-5672"
-        m.should == @message
-        h.should == @header
-      end
-    end
-
     it "should log an error if a subscribe fails" do
       @logger.should_receive(:info).with(/Connecting/).once
       @logger.should_receive(:info).with(/RECV/).never
@@ -305,7 +270,7 @@ describe RightAMQP::BrokerClient do
       @bind.should_receive(:subscribe).and_raise(Exception)
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
       broker.__send__(:update_status, :ready)
-      result = broker.subscribe({:name => "queue"}, {:type => :direct, :name => "exchange"}) {|b, p|}
+      result = broker.subscribe({:name => "queue"}, {:type => :direct, :name => "exchange"}) {|_, _|}
       result.should be_false
     end
 
@@ -313,30 +278,105 @@ describe RightAMQP::BrokerClient do
 
   context "when receiving" do
 
+    before(:each) do
+      @header = flexmock("header", :ack => true).by_default
+      @subscribe_options = {}
+    end
+
+    it "should unserialize the message by default" do
+      @logger.should_receive(:info).with(/Connecting/).once
+      broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
+      flexmock(broker).should_receive(:unserialize).and_return(@packet).once
+      broker.__send__(:receive, "queue", @header, @message, @subscribe_options) {|_, _|}
+    end
+
+    it "should not unserialize the message if so requested" do
+      @logger.should_receive(:info).with(/Connecting/).once
+      broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
+      flexmock(broker).should_receive(:unserialize).never
+      @subscribe_options = {:no_unserialize => true}
+      broker.__send__(:receive, "queue", @header, @message, @subscribe_options) {|_, _|}
+    end
+
+    it "should make callback to deliver message" do
+      @logger.should_receive(:info).with(/Connecting/).once
+      broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
+      flexmock(broker).should_receive(:unserialize).and_return(@packet).once
+      called = 0
+      broker.__send__(:receive, "queue", @header, @message, @subscribe_options) { |b, m| called += 1 }
+      called.should == 1
+    end
+
+    it "should not make callback if received message is nil but then ack if option set" do
+      @logger.should_receive(:info).with(/Connecting/).once
+      @header.should_receive(:ack).once
+      broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
+      flexmock(broker).should_receive(:unserialize).and_return(nil).once
+      @subscribe_options = {:ack => true}
+      called = 0
+      broker.__send__(:receive, "queue", @header, @message, @subscribe_options) { |b, m| called += 1 }
+      called.should == 0
+    end
+
+    it "should ignore 'nil' message but then ack if option set" do
+      @logger.should_receive(:info).with(/Connecting/).once
+      @logger.should_receive(:debug).with(/nil message ignored/).once
+      @header.should_receive(:ack).once
+      broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
+      @subscribe_options = {:ack => true}
+      called = 0
+      broker.__send__(:receive, "queue", @header, "nil", @subscribe_options) { |b, m| called += 1 }
+      called.should == 0
+    end
+
+    it "should ignore 'nil' message when ack option not set" do
+      @logger.should_receive(:info).with(/Connecting/).once
+      @logger.should_receive(:debug).with(/nil message ignored/).once
+      @header.should_receive(:ack).never
+      broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
+      broker.__send__(:receive, "queue", @header, "nil", @subscribe_options) {|_, _|}
+    end
+
+    it "should pass header with message if callback requires it" do
+      @logger.should_receive(:info).with(/Connecting/).once
+      broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
+      flexmock(broker).should_receive(:unserialize).never
+      @subscribe_options = {:no_unserialize => true}
+      broker.__send__(:receive, "queue", @header, @message, @subscribe_options) do |b, m, h|
+        b.should == "rs-broker-localhost-5672"
+        m.should == @message
+        h.should == @header
+      end
+    end
+
+  end # when receiving
+
+  context "when unserializing" do
+
     it "should unserialize the message, log it, and return it" do
       @logger.should_receive(:info).with(/Connecting/).once
       @logger.should_receive(:info).with(/^RECV/).once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
-      broker.__send__(:receive, "queue", @message, RequestMock => nil).should == @packet
+      broker.__send__(:unserialize, "queue", @message, RequestMock => nil).should == @packet
     end
 
     it "should log a warning if the message is not of the right type and return nil" do
       @logger.should_receive(:warning).with(/Received invalid.*packet type/).once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
-      broker.__send__(:receive, "queue", @message).should be_nil
+      broker.__send__(:unserialize, "queue", @message).should be_nil
     end
 
     it "should show the category in the warning message if specified" do
       @logger.should_receive(:warning).with(/Received invalid xxxx packet type/).once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
-      broker.__send__(:receive, "queue", @message, ResultMock => nil, :category => "xxxx")
+      broker.__send__(:unserialize, "queue", @message, ResultMock => nil, :category => "xxxx")
     end
 
     it "should display broker alias in the log" do
       @logger.should_receive(:info).with(/Connecting/).once
       @logger.should_receive(:info).with(/^RECV b0 /).once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
-      broker.__send__(:receive, "queue", @message, RequestMock => nil)
+      broker.__send__(:unserialize, "queue", @message, RequestMock => nil)
     end
 
     it "should filter the packet display for :info level" do
@@ -345,7 +385,7 @@ describe RightAMQP::BrokerClient do
       @logger.should_receive(:debug).with(/^RECV.*TO YOU/).never
       @packet.should_receive(:to_s).with([:to], :recv_version).and_return("TO YOU").once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
-      broker.__send__(:receive, "queue", @message, RequestMock => [:to])
+      broker.__send__(:unserialize, "queue", @message, RequestMock => [:to])
     end
 
     it "should not filter the packet display for :debug level" do
@@ -355,21 +395,21 @@ describe RightAMQP::BrokerClient do
       @logger.should_receive(:info).with(/^RECV.*ALL/).once
       @packet.should_receive(:to_s).with(nil, :recv_version).and_return("ALL").once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
-      broker.__send__(:receive, "queue", @message, RequestMock => [:to])
+      broker.__send__(:unserialize, "queue", @message, RequestMock => [:to])
     end
 
     it "should display additional data in log" do
       @logger.should_receive(:info).with(/Connecting/).once
       @logger.should_receive(:info).with(/^RECV.*More data/).once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
-      broker.__send__(:receive, "queue", @message, RequestMock => nil, :log_data => "More data")
+      broker.__send__(:unserialize, "queue", @message, RequestMock => nil, :log_data => "More data")
     end
 
     it "should not log a message if requested not to" do
       @logger.should_receive(:info).with(/Connecting/).once
       @logger.should_receive(:info).with(/^RECV/).never
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
-      broker.__send__(:receive, "queue", @message, RequestMock => nil, :no_log => true)
+      broker.__send__(:unserialize, "queue", @message, RequestMock => nil, :no_log => true)
     end
 
     it "should not log a message if requested not to unless debug level" do
@@ -377,7 +417,7 @@ describe RightAMQP::BrokerClient do
       @logger.should_receive(:info).with(/Connecting/).once
       @logger.should_receive(:info).with(/^RECV/).once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
-      broker.__send__(:receive, "queue", @message, RequestMock => nil, :no_log => true)
+      broker.__send__(:unserialize, "queue", @message, RequestMock => nil, :no_log => true)
     end
 
     it "should log an error if exception prevents normal logging and should then return nil" do
@@ -385,7 +425,7 @@ describe RightAMQP::BrokerClient do
       @serializer.should_receive(:load).with(@message).and_raise(Exception).once
       @exceptions.should_receive(:track).once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
-      broker.__send__(:receive, "queue", @message).should be_nil
+      broker.__send__(:unserialize, "queue", @message).should be_nil
     end
 
     it "should make callback when there is a receive failure" do
@@ -396,7 +436,7 @@ describe RightAMQP::BrokerClient do
       callback = lambda { |msg, e| called += 1 }
       options = {:exception_on_receive_callback => callback}
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, options)
-      broker.__send__(:receive, "queue", @message).should be_nil
+      broker.__send__(:unserialize, "queue", @message).should be_nil
       called.should == 1
     end
 
@@ -405,10 +445,10 @@ describe RightAMQP::BrokerClient do
       @logger.should_receive(:info).with(/^RE-RECV/).once
       @packet.should_receive(:tries).and_return(["try1"]).once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
-      broker.__send__(:receive, "queue", @message, RequestMock => nil).should == @packet
+      broker.__send__(:unserialize, "queue", @message, RequestMock => nil).should == @packet
     end
 
-  end # when receiving
+  end # when unserializing
 
   context "when unsubscribing" do
 
@@ -424,21 +464,21 @@ describe RightAMQP::BrokerClient do
     it "should unsubscribe a queue by name" do
       @queue.should_receive(:unsubscribe).once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
-      broker.subscribe({:name => "queue1"}, {:type => :direct, :name => "exchange"})
+      broker.subscribe({:name => "queue1"}, {:type => :direct, :name => "exchange"}) {|_, _|}
       broker.unsubscribe(["queue1"])
     end
 
     it "should ignore unsubscribe if queue unknown" do
       @queue.should_receive(:unsubscribe).never
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
-      broker.subscribe({:name => "queue1"}, {:type => :direct, :name => "exchange"})
+      broker.subscribe({:name => "queue1"}, {:type => :direct, :name => "exchange"}) {|_, _|}
       broker.unsubscribe(["queue2"])
     end
 
     it "should activate block after unsubscribing if provided" do
       @queue.should_receive(:unsubscribe).and_yield.once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
-      broker.subscribe({:name => "queue1"}, {:type => :direct, :name => "exchange"})
+      broker.subscribe({:name => "queue1"}, {:type => :direct, :name => "exchange"}) {|_, _|}
       called = 0
       broker.unsubscribe(["queue1"]) { called += 1 }
       called.should == 1
@@ -447,7 +487,7 @@ describe RightAMQP::BrokerClient do
     it "should ignore the request if client not usable" do
       @queue.should_receive(:unsubscribe).and_yield.never
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
-      broker.subscribe({:name => "queue1"}, {:type => :direct, :name => "exchange"})
+      broker.subscribe({:name => "queue1"}, {:type => :direct, :name => "exchange"}) {|_, _|}
       broker.__send__(:update_status, :disconnected)
       broker.unsubscribe(["queue1"])
     end
@@ -457,7 +497,7 @@ describe RightAMQP::BrokerClient do
       @queue.should_receive(:unsubscribe).and_raise(Exception).once
       @exceptions.should_receive(:track).once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
-      broker.subscribe({:name => "queue1"}, {:type => :direct, :name => "exchange"})
+      broker.subscribe({:name => "queue1"}, {:type => :direct, :name => "exchange"}) {|_, _|}
       called = 0
       broker.unsubscribe(["queue1"]) { called += 1 }
       called.should == 1
@@ -736,7 +776,7 @@ describe RightAMQP::BrokerClient do
     it "should delete the named queue and return true" do
       @queue.should_receive(:delete).once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
-      broker.subscribe({:name => "queue1"}, {:type => :direct, :name => "exchange"})
+      broker.subscribe({:name => "queue1"}, {:type => :direct, :name => "exchange"}) {|_, _|}
       broker.queues.should == [@queue]
       broker.delete("queue1").should be_true
       broker.queues.should == []
@@ -745,7 +785,7 @@ describe RightAMQP::BrokerClient do
     it "should return false if the client is not usable" do
       @queue.should_receive(:delete).never
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
-      broker.subscribe({:name => "queue1"}, {:type => :direct, :name => "exchange"})
+      broker.subscribe({:name => "queue1"}, {:type => :direct, :name => "exchange"}) {|_, _|}
       broker.queues.should == [@queue]
       broker.__send__(:update_status, :disconnected)
       broker.delete("queue1").should be_false
@@ -757,7 +797,7 @@ describe RightAMQP::BrokerClient do
       @exceptions.should_receive(:track).once
       @queue.should_receive(:delete).and_raise(Exception)
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @options)
-      broker.subscribe({:name => "queue1"}, {:type => :direct, :name => "exchange"})
+      broker.subscribe({:name => "queue1"}, {:type => :direct, :name => "exchange"}) {|_, _|}
       broker.queues.should == [@queue]
       broker.delete("queue1").should be_false
     end
