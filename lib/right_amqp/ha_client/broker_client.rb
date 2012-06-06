@@ -95,6 +95,8 @@ module RightAMQP
     #   :prefetch(Integer):: Maximum number of messages the AMQP broker is to prefetch for the agent
     #     before it receives an ack. Value 1 ensures that only last unacknowledged gets redelivered
     #     if the agent crashes. Value 0 means unlimited prefetch.
+    #   :fiber_pool(NB::FiberPool):: Pool of initialized fibers to be used for asynchronous message
+    #     processing (can be overridden with subscribe option)
     #   :exception_on_receive_callback(Proc):: Callback activated on a receive exception with parameters
     #     message(Object):: Message received
     #     exception(Exception):: Exception raised
@@ -200,16 +202,22 @@ module RightAMQP
     #   :no_log(Boolean):: Disable receive logging unless debug level
     #   :exchange2(Hash):: Additional exchange to which same queue is to be bound
     #   :brokers(Array):: Identity of brokers for which to subscribe, defaults to all usable if nil or empty
+    #   :fiber_pool(NB::FiberPool):: Pool of initialized fibers to be used for asynchronous message
+    #     processing (non-nil value will override constructor option setting)
     #
     # === Block
-    # Block with following parameters to be called each time exchange matches a message to the queue:
+    # Required block with following parameters to be called each time exchange matches a message to the queue
     #   identity(String):: Serialized identity of broker delivering the message
     #   message(Packet|String):: Message received, which is unserialized unless :no_unserialize was specified
     #   header(AMQP::Protocol::Header):: Message header (optional block parameter)
     #
+    # === Raise
+    # ArgumentError:: If a block is not supplied
+    #
     # === Return
     # (Boolean):: true if subscribe successfully or if already subscribed, otherwise false
-    def subscribe(queue, exchange = nil, options = {}, &blk)
+    def subscribe(queue, exchange = nil, options = {}, &block)
+      raise ArgumentError, "Must call this method with a block" unless block
       return false unless usable?
       return true unless @queues.select { |q| q.name == queue[:name] }.empty?
 
@@ -237,23 +245,14 @@ module RightAMQP
         end
         q.subscribe(options[:ack] ? {:ack => true} : {}) do |header, message|
           begin
-            if options[:no_unserialize] || @serializer.nil?
-              execute_callback(blk, @identity, message, header)
-            elsif message == "nil"
-              # This happens as part of connecting an instance agent to a broker prior to version 13
-              header.ack if options[:ack]
-              logger.debug("RECV #{@alias} nil message ignored")
+            if pool = (options[:fiber_pool] || @options[:fiber_pool])
+              pool.spawn { receive(queue[:name], header, message, options, &block) }
             else
-              packet = receive(queue[:name], message, options)
-              if packet
-                execute_callback(blk, @identity, packet, header)
-              elsif options[:ack]
-                header.ack
-              end
+              receive(queue[:name], header, message, options, &block)
             end
           rescue Exception => e
             header.ack if options[:ack]
-            logger.exception("Failed executing block for message from queue #{queue.inspect}#{to_exchange} " +
+            logger.exception("Failed setting up to receive message from queue #{queue.inspect} " +
                              "on broker #{@alias}", e, :trace)
             @exceptions.track("receive", e)
           end
@@ -276,17 +275,17 @@ module RightAMQP
     #
     # === Return
     # true:: Always return true
-    def unsubscribe(queue_names, &blk)
+    def unsubscribe(queue_names, &block)
       if usable?
         @queues.each do |q|
           if queue_names.include?(q.name)
             begin
               logger.info("[stop] Unsubscribing queue #{q.name} on broker #{@alias}")
-              q.unsubscribe { blk.call if blk }
+              q.unsubscribe { block.call if block }
             rescue Exception => e
               logger.exception("Failed unsubscribing queue #{q.name} on broker #{@alias}", e, :trace)
               @exceptions.track("unsubscribe", e)
-              blk.call if blk
+              block.call if block
             end
           end
         end
@@ -457,7 +456,7 @@ module RightAMQP
     #
     # === Return
     # true:: Always return true
-    def close(propagate = true, normal = true, log = true, &blk)
+    def close(propagate = true, normal = true, log = true, &block)
       final_status = normal ? :closed : :failed
       if ![:closed, :failed].include?(@status)
         begin
@@ -599,12 +598,57 @@ module RightAMQP
       end
     end
 
-    # Receive message by unserializing it, checking that it is an acceptable type, and logging accordingly
+    # Receive message by optionally unserializing it, passing it to the callback, and optionally
+    # acknowledging it
+    #
+    # === Parameters
+    # queue(String):: Name of queue
+    # header(AMQP::Protocol::Header):: Message header
+    # message(String):: Serialized packet
+    # options(Hash):: Subscribe options
+    #   :ack(Boolean):: Whether caller takes responsibility for explicitly acknowledging each
+    #     message received, defaults to implicit acknowledgement in AMQP as part of message receipt
+    #   :no_unserialize(Boolean):: Do not unserialize message, this is an escape for special
+    #     situations like enrollment, also implicitly disables receive filtering and logging;
+    #     this option is implicitly invoked if initialize without a serializer
+    #
+    # === Block
+    # Block with following parameters to be called with received message
+    #   identity(String):: Serialized identity of broker delivering the message
+    #   message(Packet|String):: Message received, which is unserialized unless :no_unserialize was specified
+    #   header(AMQP::Protocol::Header):: Message header (optional block parameter)
+    #
+    # === Return
+    # true:: Always return true
+    def receive(queue, header, message, options, &block)
+      begin
+        if options[:no_unserialize] || @serializer.nil?
+          execute_callback(block, @identity, message, header)
+        elsif message == "nil"
+          # This happens as part of connecting an instance agent to a broker prior to version 13
+          header.ack if options[:ack]
+          logger.debug("RECV #{@alias} nil message ignored")
+        elsif packet = unserialize(queue, message, options)
+          execute_callback(block, @identity, packet, header)
+        elsif options[:ack]
+          # Need to ack empty packet since no callback is being made
+          header.ack
+        end
+        true
+      rescue Exception => e
+        header.ack if options[:ack]
+        logger.exception("Failed receiving message from queue #{queue.inspect} on broker #{@alias}", e, :trace)
+        @exceptions.track("receive", e)
+
+      end
+    end
+
+    # Unserialize message, check that it is an acceptable type, and log it
     #
     # === Parameters
     # queue(String):: Name of queue
     # message(String):: Serialized packet
-    # options(Hash):: Subscribe options:
+    # options(Hash):: Subscribe options
     #   (packet class)(Array(Symbol)):: Filters to be applied in to_s when logging packet to :info,
     #     only packet classes specified are accepted, others are not processed but are logged with error
     #   :category(String):: Packet category description to be used in error messages
@@ -613,7 +657,7 @@ module RightAMQP
     #
     # === Return
     # (Packet|nil):: Unserialized packet or nil if not of right type or if there is an exception
-    def receive(queue, message, options = {})
+    def unserialize(queue, message, options = {})
       begin
         received_at = Time.now.to_f
         packet = @serializer.load(message)
