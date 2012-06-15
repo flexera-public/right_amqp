@@ -106,6 +106,7 @@ module RightAMQP
     #   :user(String):: User name
     #   :pass(String):: Password
     #   :vhost(String):: Virtual host path name
+    #   :ssl(Boolean):: Whether SSL is enabled
     #   :insist(Boolean):: Whether to suppress redirection of connection
     #   :reconnect_interval(Integer):: Number of seconds between reconnect attempts, defaults to RECONNECT_INTERVAL
     #   :heartbeat(Integer):: Number of seconds between AMQP connection heartbeats used to keep
