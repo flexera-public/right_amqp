@@ -1,16 +1,9 @@
-GIT
-  remote: git@github.com:rightscale/right_support.git
-  revision: 87949a426e1baac2ef8243a43e1da964e57aeabb
-  branch: master
-  specs:
-    right_support (1.2.0)
-
 PATH
   remote: .
   specs:
     right_amqp (0.3.1)
       eventmachine (~> 0.12.10)
-      right_support (~> 1.2)
+      right_support (>= 1.2, < 3.0)
 
 GEM
   remote: http://rubygems.org/
@@ -29,6 +22,7 @@ GEM
     rake (0.9.2.2)
     rdoc (3.12)
       json (~> 1.4)
+    right_support (2.2.0)
     rspec (2.8.0)
       rspec-core (~> 2.8.0)
       rspec-expectations (~> 2.8.0)
@@ -58,6 +52,5 @@ DEPENDENCIES
   rake (= 0.9.2.2)
   rdoc (~> 3.12)
   right_amqp!
-  right_support (~> 1.2)!
   rspec (~> 2.8)
   ruby-debug19
