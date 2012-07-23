@@ -34,6 +34,7 @@ describe RightAMQP::HABrokerClient do
   before(:each) do
     setup_logger
     @exceptions = RightSupport::Stats::Exceptions
+    @non_deliveries = RightSupport::Stats::Activity
     @message = "message"
     @packet = flexmock("packet", :class => RequestMock, :to_s => true, :version => [12, 12]).by_default
     @serializer = flexmock("serializer")
@@ -170,7 +171,7 @@ describe RightAMQP::HABrokerClient do
 
     it "should create a broker client for default host and port" do
       flexmock(RightAMQP::BrokerClient).should_receive(:new).with(@identity, @address, @serializer,
-              @exceptions, Hash, nil).and_return(@broker).once
+              @exceptions, @non_deliveries, Hash, nil).and_return(@broker).once
       ha = RightAMQP::HABrokerClient.new(@serializer)
       ha.brokers.should == [@broker]
     end
@@ -179,11 +180,11 @@ describe RightAMQP::HABrokerClient do
       address1 = {:host => "first", :port => 5672, :index => 0}
       broker1 = flexmock("broker_client1", :identity => "rs-broker-first-5672", :usable? => true, :return_message => true)
       flexmock(RightAMQP::BrokerClient).should_receive(:new).with("rs-broker-first-5672", address1, @serializer,
-              @exceptions, Hash, nil).and_return(broker1).once
+              @exceptions, @non_deliveries, Hash, nil).and_return(broker1).once
       address2 = {:host => "second", :port => 5672, :index => 1}
       broker2 = flexmock("broker_client2", :identity => "rs-broker-second-5672", :usable? => true, :return_message => true)
       flexmock(RightAMQP::BrokerClient).should_receive(:new).with("rs-broker-second-5672", address2, @serializer,
-              @exceptions, Hash, nil).and_return(broker2).once
+              @exceptions, @non_deliveries, Hash, nil).and_return(broker2).once
       ha = RightAMQP::HABrokerClient.new(@serializer, :host => "first, second", :port => 5672)
       ha.brokers.should == [broker1, broker2]
     end
@@ -285,21 +286,21 @@ describe RightAMQP::HABrokerClient do
       @broker1 = flexmock("broker_client1", :identity => @identity1, :usable? => true, :return_message => true,
                           :alias => "b0", :host => "first", :port => 5672, :index => 0)
       flexmock(RightAMQP::BrokerClient).should_receive(:new).with(@identity1, @address1, @serializer,
-              @exceptions, Hash, nil).and_return(@broker1).by_default
+              @exceptions, @non_deliveries, Hash, nil).and_return(@broker1).by_default
 
       @address2 = {:host => "second", :port => 5672, :index => 1}
       @identity2 = "rs-broker-second-5672"
       @broker2 = flexmock("broker_client2", :identity => @identity2, :usable? => true, :return_message => true,
                           :alias => "b1", :host => "second", :port => 5672, :index => 1)
       flexmock(RightAMQP::BrokerClient).should_receive(:new).with(@identity2, @address2, @serializer,
-              @exceptions, Hash, nil).and_return(@broker2).by_default
+              @exceptions, @non_deliveries, Hash, nil).and_return(@broker2).by_default
 
       @address3 = {:host => "third", :port => 5672, :index => 2}
       @identity3 = "rs-broker-third-5672"
       @broker3 = flexmock("broker_client3", :identity => @identity3, :usable? => true, :return_message => true,
                           :alias => "b2", :host => "third", :port => 5672, :index => 2)
       flexmock(RightAMQP::BrokerClient).should_receive(:new).with(@identity3, @address3, @serializer,
-              @exceptions, Hash, nil).and_return(@broker3).by_default
+              @exceptions, @non_deliveries, Hash, nil).and_return(@broker3).by_default
     end
 
     it "should use host and port to uniquely identity broker in AgentIdentity format" do
@@ -401,7 +402,7 @@ describe RightAMQP::HABrokerClient do
         eval("@broker#{k}.should_receive(:subscribe).and_return(true).by_default")
         eval("@broker#{k}.should_receive(:return_message).and_return(true).by_default")
         eval("flexmock(RightAMQP::BrokerClient).should_receive(:new).with(@identity#{k}, @address#{k}, " +
-                       "@serializer, @exceptions, Hash, nil).and_return(@broker#{k}).by_default")
+                       "@serializer, @exceptions, @non_deliveries, Hash, nil).and_return(@broker#{k}).by_default")
       end
     end
   
@@ -412,7 +413,7 @@ describe RightAMQP::HABrokerClient do
         ha.brokers.size.should == 1
         ha.brokers[0].alias == "b0"
         flexmock(RightAMQP::BrokerClient).should_receive(:new).with(@identity2, @address2, @serializer,
-                 @exceptions, Hash, nil).and_return(@broker2).once
+                 @exceptions, @non_deliveries, Hash, nil).and_return(@broker2).once
         res = ha.connect("second", 5672, 1)
         res.should be_true
         ha.brokers.size.should == 2
@@ -425,7 +426,7 @@ describe RightAMQP::HABrokerClient do
         @broker1.should_receive(:usable?).and_return(false)
         @broker1.should_receive(:close).and_return(true).once
         flexmock(RightAMQP::BrokerClient).should_receive(:new).with(@identity1, @address1, @serializer,
-                 @exceptions, Hash, ha.brokers[0]).and_return(@broker1).once
+                 @exceptions, @non_deliveries, Hash, ha.brokers[0]).and_return(@broker1).once
         res = ha.connect("first", 5672, 0)
         res.should be_true
         ha.brokers.size.should == 2
@@ -440,7 +441,7 @@ describe RightAMQP::HABrokerClient do
         @broker1.should_receive(:status).and_return(:connected).once
         @broker1.should_receive(:close).and_return(true).never
         flexmock(RightAMQP::BrokerClient).should_receive(:new).with(@identity1, @address1, @serializer,
-                 @exceptions, Hash, ha.brokers[0]).and_return(@broker1).never
+                 @exceptions, @non_deliveries, Hash, ha.brokers[0]).and_return(@broker1).never
         res = ha.connect("first", 5672, 0)
         res.should be_false
         ha.brokers.size.should == 2
@@ -454,7 +455,7 @@ describe RightAMQP::HABrokerClient do
         ha.brokers.size.should == 2
         @broker1.should_receive(:close).and_return(true).once
         flexmock(RightAMQP::BrokerClient).should_receive(:new).with(@identity1, @address1, @serializer,
-                 @exceptions, Hash, ha.brokers[0]).and_return(@broker1).once
+                 @exceptions, @non_deliveries, Hash, ha.brokers[0]).and_return(@broker1).once
         res = ha.connect("first", 5672, 0, nil, force = true)
         res.should be_true
         ha.brokers.size.should == 2
@@ -467,7 +468,7 @@ describe RightAMQP::HABrokerClient do
         ha.brokers.size.should == 2
         @broker1.should_receive(:close).and_return(true).once
         flexmock(RightAMQP::BrokerClient).should_receive(:new).with(@identity3, @address3.merge(:index => 0),
-                 @serializer, @exceptions, Hash, nil).and_return(@broker3).once
+                 @serializer, @exceptions, @non_deliveries, Hash, nil).and_return(@broker3).once
         res = ha.connect("third", 5672, 0)
         res.should be_true
         ha.brokers.size.should == 2
@@ -1083,6 +1084,7 @@ describe RightAMQP::HABrokerClient do
         ha.stats.should == {"brokers" => ["stats1", "stats2", "stats3"],
                             "exceptions" => nil,
                             "heartbeat" => nil,
+                            "non-deliveries" => nil,
                             "returns" => nil}
       end
 
@@ -1205,7 +1207,7 @@ describe RightAMQP::HABrokerClient do
 
       it "should provide connection status callback only once when one-off is requested" do
         flexmock(RightAMQP::BrokerClient).should_receive(:new).with(@identity, @address, @serializer,
-                @exceptions, Hash, nil).and_return(@broker).once
+                @exceptions, @non_deliveries, Hash, nil).and_return(@broker).once
         ha = RightAMQP::HABrokerClient.new(@serializer)
         called = 0
         ha.connection_status(:one_off => 10) { |_| called += 1 }
@@ -1221,7 +1223,7 @@ describe RightAMQP::HABrokerClient do
         flexmock(EM::Timer).should_receive(:new).and_return(@timer).once
         @timer.should_receive(:cancel).once
         flexmock(RightAMQP::BrokerClient).should_receive(:new).with(@identity, @address, @serializer,
-                @exceptions, Hash, nil).and_return(@broker).once
+                @exceptions, @non_deliveries, Hash, nil).and_return(@broker).once
         ha = RightAMQP::HABrokerClient.new(@serializer)
         called = 0
         ha.connection_status(:one_off => 10) { |_| called += 1 }
@@ -1233,7 +1235,7 @@ describe RightAMQP::HABrokerClient do
         flexmock(EM::Timer).should_receive(:new).and_return(@timer).and_yield.once
         @timer.should_receive(:cancel).never
         flexmock(RightAMQP::BrokerClient).should_receive(:new).with(@identity, @address, @serializer,
-                @exceptions, Hash, nil).and_return(@broker).once
+                @exceptions, @non_deliveries, Hash, nil).and_return(@broker).once
         ha = RightAMQP::HABrokerClient.new(@serializer)
         called = 0
         ha.connection_status(:one_off => 10) { |status| called += 1; status.should == :timeout }
@@ -1242,7 +1244,7 @@ describe RightAMQP::HABrokerClient do
 
       it "should be able to have multiple connection status callbacks" do
         flexmock(RightAMQP::BrokerClient).should_receive(:new).with(@identity, @address, @serializer,
-                @exceptions, Hash, nil).and_return(@broker).once
+                @exceptions, @non_deliveries, Hash, nil).and_return(@broker).once
         ha = RightAMQP::HABrokerClient.new(@serializer)
         called1 = 0
         called2 = 0
