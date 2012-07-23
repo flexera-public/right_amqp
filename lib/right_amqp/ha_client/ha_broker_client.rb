@@ -430,7 +430,7 @@ module RightAMQP
         end unless existing
 
         address = {:host => host, :port => port, :index => index}
-        broker = BrokerClient.new(identity, address, @serializer, @exceptions, @options, existing)
+        broker = BrokerClient.new(identity, address, @serializer, @exception_stats, @non_delivery_stats, @options, existing)
         p = priority(old_identity)
         if priority && priority < p
           @brokers.insert(priority, broker)
@@ -749,7 +749,7 @@ module RightAMQP
           rescue Exception => e
             handler.completed_one
             logger.exception("Failed to close broker #{b.alias}", e, :trace)
-            @exceptions.track("close", e)
+            @exception_stats.track("close", e)
           end
         end
       end
@@ -839,14 +839,17 @@ module RightAMQP
     #     "total"(Integer):: Total exceptions for this category
     #     "recent"(Array):: Most recent as a hash of "count", "type", "message", "when", and "where"
     #   "heartbeat"(Integer|nil):: Number of seconds between AMQP heartbeats, or nil if heartbeat disabled
+    #   "non_deliveries"(Hash|nil):: Non-delivery activity stats with keys "total", "percent", "last", and "rate"
+    #     with percentage breakdown per non-delivery reason, or nil if none
     #   "returns"(Hash|nil):: Message return activity stats with keys "total", "percent", "last", and "rate"
     #     with percentage breakdown per return reason, or nil if none
     def stats(reset = false)
       stats = {
-        "brokers"    => @brokers.map { |b| b.stats },
-        "exceptions" => @exceptions.stats,
-        "heartbeat"  => @options[:heartbeat],
-        "returns"    => @returns.all
+        "brokers"        => @brokers.map { |b| b.stats },
+        "exceptions"     => @exception_stats.stats,
+        "heartbeat"      => @options[:heartbeat],
+        "non-deliveries" => @non_delivery_stats.all,
+        "returns"        => @return_stats.all
       }
       reset_stats if reset
       stats
@@ -859,8 +862,9 @@ module RightAMQP
     # === Return
     # true:: Always return true
     def reset_stats
-      @returns = RightSupport::Stats::Activity.new
-      @exceptions = RightSupport::Stats::Exceptions.new(self, @options[:exception_callback])
+      @return_stats = RightSupport::Stats::Activity.new
+      @non_delivery_stats = RightSupport::Stats::Activity.new
+      @exception_stats = RightSupport::Stats::Exceptions.new(self, @options[:exception_callback])
       true
     end
 
@@ -873,7 +877,7 @@ module RightAMQP
     def connect_all
       self.class.addresses(@options[:host], @options[:port]).map do |a|
         identity = self.class.identity(a[:host], a[:port])
-        BrokerClient.new(identity, a, @serializer, @exceptions, @options, nil)
+        BrokerClient.new(identity, a, @serializer, @exception_stats, @non_delivery_stats, @options, nil)
       end
     end
 
@@ -1045,7 +1049,7 @@ module RightAMQP
       @brokers_hash[identity].update_status(:stopping) if reason == "ACCESS_REFUSED"
 
       if context
-        @returns.update("#{alias_(identity)} (#{reason.to_s.downcase})")
+        @return_stats.update("#{alias_(identity)} (#{reason.to_s.downcase})")
         name = context.name
         options = context.options || {}
         token = context.token
@@ -1065,6 +1069,7 @@ module RightAMQP
             t = token ? " <#{token}>" : ""
             logger.info("NO ROUTE #{aliases(context.brokers).join(", ")} [#{name}]#{t} to #{to}")
             @non_delivery.call(reason, context.type, token, context.from, to) if @non_delivery
+            @non_delivery_stats.update("no route")
           end
         end
 
@@ -1078,14 +1083,14 @@ module RightAMQP
                                                    :persistent => persistent, :mandatory => mandatory))
         end
       else
-        @returns.update("#{alias_(identity)} (#{reason.to_s.downcase} - missing context)")
+        @return_stats.update("#{alias_(identity)} (#{reason.to_s.downcase} - missing context)")
         logger.info("Dropping message returned from broker #{identity} for reason #{reason} " +
                     "because no message context available for re-routing it to #{to}")
       end
       true
     rescue Exception => e
       logger.exception("Failed to handle #{reason} return from #{identity} for message being routed to #{to}", e, :trace)
-      @exceptions.track("return", e)
+      @exception_stats.track("return", e)
     end
 
     # Helper for deferring block execution until specified number of actions have completed

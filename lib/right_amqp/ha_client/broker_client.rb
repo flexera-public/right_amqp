@@ -65,10 +65,10 @@ module RightAMQP
     attr_reader :last_failed
 
     # (RightSupport::Stats::Activity) AMQP lost connection statistics
-    attr_reader :disconnects
+    attr_reader :disconnect_stats
 
     # (RightSupport::Stats::Activity) AMQP connection failure statistics
-    attr_reader :failures
+    attr_reader :failure_stats
 
     # (Integer) Number of attempts to connect after failure
     attr_reader :retries
@@ -83,7 +83,10 @@ module RightAMQP
     #   :index(String):: Unique index for broker within set of brokers for use in forming alias
     # serializer(Serializer):: Serializer used for unmarshaling received messages to packets
     #   (responds to :load); if nil, has same effect as setting subscribe option :no_unserialize
-    # exceptions(RightSupport::Stats::Exceptions):: Exception statistics container
+    # exception_stats(RightSupport::Stats::Exceptions):: Exception statistics container to be updated
+    #   whenever there is an unexpected exception
+    # non_delivery_stats(RightSupport::Stats::Activity):: Non-delivery statistics container to be
+    #   updated whenever a message cannot be sent or received
     # options(Hash):: Configuration options
     #   :user(String):: User name
     #   :pass(String):: Password
@@ -108,7 +111,7 @@ module RightAMQP
     #
     # === Raise
     # ArgumentError:: If serializer does not respond to :dump and :load
-    def initialize(identity, address, serializer, exceptions, options, existing = nil)
+    def initialize(identity, address, serializer, exception_stats, non_delivery_stats, options, existing = nil)
       @options         = options
       @identity        = identity
       @host            = address[:host]
@@ -119,21 +122,22 @@ module RightAMQP
       unless serializer.nil? || [:dump, :load].all? { |m| serializer.respond_to?(m) }
         raise ArgumentError, "serializer must be a class/object that responds to :dump and :load"
       end
-      @serializer      = serializer
-      @exceptions      = exceptions
-      @queues          = []
-      @last_failed     = false
-      @disconnects     = RightSupport::Stats::Activity.new(measure_rate = false)
-      @failures        = RightSupport::Stats::Activity.new(measure_rate = false)
-      @retries         = 0
+      @serializer         = serializer
+      @queues             = []
+      @last_failed        = false
+      @exception_stats    = exception_stats
+      @non_delivery_stats = non_delivery_stats
+      @disconnect_stats   = RightSupport::Stats::Activity.new(measure_rate = false)
+      @failure_stats      = RightSupport::Stats::Activity.new(measure_rate = false)
+      @retries            = 0
 
       connect(address, @options[:reconnect_interval])
 
       if existing
-        @disconnects = existing.disconnects
-        @failures = existing.failures
-        @last_failed = existing.last_failed
-        @retries = existing.retries
+        @disconnect_stats = existing.disconnect_stats
+        @failure_stats    = existing.failure_stats
+        @last_failed      = existing.last_failed
+        @retries          = existing.retries
         update_failure if @status == :failed
       end
     end
@@ -255,12 +259,13 @@ module RightAMQP
             header.ack if options[:ack]
             logger.exception("Failed setting up to receive message from queue #{queue.inspect} " +
                              "on broker #{@alias}", e, :trace)
-            @exceptions.track("receive", e)
+            @exception_stats.track("receive", e)
+            @non_delivery_stats.update("receive failure")
           end
         end
       rescue Exception => e
         logger.exception("Failed subscribing queue #{queue.inspect}#{to_exchange} on broker #{@alias}", e, :trace)
-        @exceptions.track("subscribe", e)
+        @exception_stats.track("subscribe", e)
         false
       end
     end
@@ -285,7 +290,7 @@ module RightAMQP
               q.unsubscribe { block.call if block }
             rescue Exception => e
               logger.exception("Failed unsubscribing queue #{q.name} on broker #{@alias}", e, :trace)
-              @exceptions.track("unsubscribe", e)
+              @exception_stats.track("unsubscribe", e)
               block.call if block
             end
           end
@@ -312,7 +317,7 @@ module RightAMQP
         true
       rescue Exception => e
         logger.exception("Failed declaring #{type.to_s} #{name} on broker #{@alias}", e, :trace)
-        @exceptions.track("declare", e)
+        @exception_stats.track("declare", e)
         false
       end
     end
@@ -362,7 +367,8 @@ module RightAMQP
         true
       rescue Exception => e
         logger.exception("Failed publishing to exchange #{exchange.inspect} on broker #{@alias}", e, :trace)
-        @exceptions.track("publish", e)
+        @exception_stats.track("publish", e)
+        @non_delivery_stats.update("publish failure")
         false
       end
     end
@@ -394,7 +400,7 @@ module RightAMQP
           yield(to, reason, message) if block_given?
         rescue Exception => e
           logger.exception("Failed return #{info.inspect} of message from broker #{@alias}", e, :trace)
-          @exceptions.track("return", e)
+          @exception_stats.track("return", e)
         end
       end
       true
@@ -426,7 +432,7 @@ module RightAMQP
           end
         rescue Exception => e
           logger.exception("Failed deleting queue #{name.inspect} on broker #{@alias}", e, :trace)
-          @exceptions.track("delete", e)
+          @exception_stats.track("delete", e)
         end
       end
       deleted
@@ -469,7 +475,7 @@ module RightAMQP
           end
         rescue Exception => e
           logger.exception("Failed to close broker #{@alias}", e, :trace)
-          @exceptions.track("close", e)
+          @exception_stats.track("close", e)
           @status = final_status
           yield if block_given?
         end
@@ -496,8 +502,8 @@ module RightAMQP
         :alias       => @alias,
         :status      => @status,
         :retries     => @retries,
-        :disconnects => @disconnects.total,
-        :failures    => @failures.total,
+        :disconnects => @disconnect_stats.total,
+        :failures    => @failure_stats.total,
       }
     end
 
@@ -512,15 +518,16 @@ module RightAMQP
     #  "disconnects"(Integer|nil):: Number of times lost connection, or nil if none
     #  "failure last"(Hash|nil):: Last connect failure information with key "elapsed", or nil if none
     #  "failures"(Integer|nil):: Number of failed attempts to connect to broker, or nil if none
+    #  "retries"(Integer|nil):: Number of connect retries, or nil if none
     def stats
       {
         "alias"           => @alias,
         "identity"        => @identity,
         "status"          => @status.to_s,
-        "disconnect last" => @disconnects.last,
-        "disconnects"     => RightSupport::Stats.nil_if_zero(@disconnects.total),
-        "failure last"    => @failures.last,
-        "failures"        => RightSupport::Stats.nil_if_zero(@failures.total),
+        "disconnect last" => @disconnect_stats.last,
+        "disconnects"     => RightSupport::Stats.nil_if_zero(@disconnect_stats.total),
+        "failure last"    => @failure_stats.last,
+        "failures"        => RightSupport::Stats.nil_if_zero(@failure_stats.total),
         "retries"         => RightSupport::Stats.nil_if_zero(@retries)
       }
     end
@@ -550,7 +557,7 @@ module RightAMQP
       elsif status == :failed
         update_failure
       elsif status == :disconnected && before != :disconnected
-        @disconnects.update
+        @disconnect_stats.update
       end
 
       unless status == before || @options[:update_status_callback].nil?
@@ -593,9 +600,9 @@ module RightAMQP
         @channel.prefetch(@options[:prefetch]) if @options[:prefetch]
       rescue Exception => e
         @status = :failed
-        @failures.update
+        @failure_stats.update
         logger.exception("Failed connecting to broker #{@alias}", e, :trace)
-        @exceptions.track("connect", e)
+        @exception_stats.track("connect", e)
         @connection.close if @connection
       end
     end
@@ -640,7 +647,8 @@ module RightAMQP
       rescue Exception => e
         header.ack if options[:ack]
         logger.exception("Failed receiving message from queue #{queue.inspect} on broker #{@alias}", e, :trace)
-        @exceptions.track("receive", e)
+        @exception_stats.track("receive", e)
+        @non_delivery_stats.update("receive failure")
       end
     end
 
@@ -678,9 +686,10 @@ module RightAMQP
       rescue Exception => e
         # TODO Taking advantage of Serializer knowledge here even though out of scope
         trace = e.class.name =~ /SerializationError/ ? :caller : :trace
-        logger.exception("Failed receiving from queue #{queue} on #{@alias}", e, trace)
-        @exceptions.track("receive", e)
+        logger.exception("Failed unserializing message from queue #{queue.inspect} on broker #{@alias}", e, trace)
+        @exception_stats.track("receive", e)
         @options[:exception_on_receive_callback].call(message, e) if @options[:exception_on_receive_callback]
+        @non_delivery_stats.update("receive failure")
         nil
       end
     end
@@ -706,7 +715,7 @@ module RightAMQP
       else
         @last_failed = true
         @retries = 0
-        @failures.update
+        @failure_stats.update
       end
       true
     end
