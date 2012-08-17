@@ -76,6 +76,13 @@ describe RightAMQP::HABrokerClient do
       context.failed.should == []
     end
 
+    it "should store identity of failed brokers" do
+      context = RightAMQP::HABrokerClient::Context.new(@packet1, @options, @brokers)
+      context.record_failure("rs-broker-1-1")
+      context.record_failure("rs-broker-2-2")
+      context.failed.should == ["rs-broker-1-1", "rs-broker-2-2"]
+    end
+
   end
 
   describe "Caching" do
@@ -164,7 +171,6 @@ describe RightAMQP::HABrokerClient do
       @identity = "rs-broker-localhost-5672"
       @address = {:host => "localhost", :port => 5672, :index => 0}
       @broker = flexmock("broker_client", :identity => @identity, :usable? => true)
-      @broker.should_receive(:return_message).by_default
       @broker.should_receive(:update_status).by_default
       flexmock(RightAMQP::BrokerClient).should_receive(:new).and_return(@broker).by_default
     end
@@ -178,21 +184,29 @@ describe RightAMQP::HABrokerClient do
 
     it "should create broker clients for specified hosts and ports and assign index in order of creation" do
       address1 = {:host => "first", :port => 5672, :index => 0}
-      broker1 = flexmock("broker_client1", :identity => "rs-broker-first-5672", :usable? => true, :return_message => true)
+      broker1 = flexmock("broker_client1", :identity => "rs-broker-first-5672", :usable? => true)
       flexmock(RightAMQP::BrokerClient).should_receive(:new).with("rs-broker-first-5672", address1, @serializer,
               @exceptions, @non_deliveries, Hash, nil).and_return(broker1).once
       address2 = {:host => "second", :port => 5672, :index => 1}
-      broker2 = flexmock("broker_client2", :identity => "rs-broker-second-5672", :usable? => true, :return_message => true)
+      broker2 = flexmock("broker_client2", :identity => "rs-broker-second-5672", :usable? => true)
       flexmock(RightAMQP::BrokerClient).should_receive(:new).with("rs-broker-second-5672", address2, @serializer,
               @exceptions, @non_deliveries, Hash, nil).and_return(broker2).once
       ha = RightAMQP::HABrokerClient.new(@serializer, :host => "first, second", :port => 5672)
       ha.brokers.should == [broker1, broker2]
     end
 
-    it "should setup to receive returned messages from each usable broker client" do
-      @broker.should_receive(:return_message).twice
-      flexmock(RightAMQP::BrokerClient).should_receive(:new).and_return(@broker).twice
-      RightAMQP::HABrokerClient.new(@serializer, :host => "first, second", :port => 5672)
+    it "should setup to receive status updates from each broker client" do
+      broker = flexmock("broker_client", :identity => "rs-broker-first-5672")
+      flexmock(RightAMQP::BrokerClient).should_receive(:new).with("rs-broker-first-5672", Hash, @serializer,
+              @exceptions, @non_deliveries, on { |arg| arg[:update_status_callback].is_a?(Proc) }, nil).and_return(broker).once
+      RightAMQP::HABrokerClient.new(@serializer, :host => "first", :port => 5672)
+    end
+
+    it "should setup to receive returned messages from each broker client" do
+      broker = flexmock("broker_client", :identity => "rs-broker-first-5672")
+      flexmock(RightAMQP::BrokerClient).should_receive(:new).with("rs-broker-first-5672", Hash, @serializer,
+              @exceptions, @non_deliveries, on { |arg| arg[:return_message_callback].is_a?(Proc) }, nil).and_return(broker).once
+      RightAMQP::HABrokerClient.new(@serializer, :host => "first", :port => 5672)
     end
 
   end # when initializing
@@ -283,21 +297,21 @@ describe RightAMQP::HABrokerClient do
     before(:each) do
       @address1 = {:host => "first", :port => 5672, :index => 0}
       @identity1 = "rs-broker-first-5672"
-      @broker1 = flexmock("broker_client1", :identity => @identity1, :usable? => true, :return_message => true,
+      @broker1 = flexmock("broker_client1", :identity => @identity1, :usable? => true,
                           :alias => "b0", :host => "first", :port => 5672, :index => 0)
       flexmock(RightAMQP::BrokerClient).should_receive(:new).with(@identity1, @address1, @serializer,
               @exceptions, @non_deliveries, Hash, nil).and_return(@broker1).by_default
 
       @address2 = {:host => "second", :port => 5672, :index => 1}
       @identity2 = "rs-broker-second-5672"
-      @broker2 = flexmock("broker_client2", :identity => @identity2, :usable? => true, :return_message => true,
+      @broker2 = flexmock("broker_client2", :identity => @identity2, :usable? => true,
                           :alias => "b1", :host => "second", :port => 5672, :index => 1)
       flexmock(RightAMQP::BrokerClient).should_receive(:new).with(@identity2, @address2, @serializer,
               @exceptions, @non_deliveries, Hash, nil).and_return(@broker2).by_default
 
       @address3 = {:host => "third", :port => 5672, :index => 2}
       @identity3 = "rs-broker-third-5672"
-      @broker3 = flexmock("broker_client3", :identity => @identity3, :usable? => true, :return_message => true,
+      @broker3 = flexmock("broker_client3", :identity => @identity3, :usable? => true,
                           :alias => "b2", :host => "third", :port => 5672, :index => 2)
       flexmock(RightAMQP::BrokerClient).should_receive(:new).with(@identity3, @address3, @serializer,
               @exceptions, @non_deliveries, Hash, nil).and_return(@broker3).by_default
@@ -400,7 +414,6 @@ describe RightAMQP::HABrokerClient do
         eval("@broker#{k}.should_receive(:usable?).and_return(true).by_default")
         eval("@broker#{k}.should_receive(:connected?).and_return(true).by_default")
         eval("@broker#{k}.should_receive(:subscribe).and_return(true).by_default")
-        eval("@broker#{k}.should_receive(:return_message).and_return(true).by_default")
         eval("flexmock(RightAMQP::BrokerClient).should_receive(:new).with(@identity#{k}, @address#{k}, " +
                        "@serializer, @exceptions, @non_deliveries, Hash, nil).and_return(@broker#{k}).by_default")
       end
@@ -756,34 +769,6 @@ describe RightAMQP::HABrokerClient do
         @broker3.should_receive(:publish).and_return(true).by_default
       end
 
-      it "should invoke return block" do
-        ha = RightAMQP::HABrokerClient.new(@serializer, :host => "first, second, third")
-        @broker1.should_receive(:return_message).and_yield("exchange", "NO_CONSUMERS", @message).once
-        called = 0
-        ha.return_message do |id, reason, message, to, context|
-          called += 1
-          id.should == @identity1
-          reason.should == "NO_CONSUMERS"
-          message.should == @message
-          to.should == "exchange"
-        end
-        called.should == 1
-      end
-
-      it "should record failure in message context if there is message context" do
-        ha = RightAMQP::HABrokerClient.new(@serializer, :host => "first, second, third")
-        ha.publish({:type => :direct, :name => "exchange", :options => {:durable => true}},
-                   @packet, :mandatory => true).should == [@identity1]
-        @broker1.should_receive(:return_message).and_yield("exchange", "NO_CONSUMERS", @message).once
-        ha.return_message do |id, reason, message, to, context|
-          id.should == @identity1
-          reason.should == "NO_CONSUMERS"
-          message.should == @message
-          to.should == "exchange"
-        end
-        ha.instance_variable_get(:@published).fetch(@message).failed.should == [@identity1]
-      end
-
       context "when non-delivery" do
 
         it "should store non-delivery block for use by return handler" do
@@ -800,83 +785,79 @@ describe RightAMQP::HABrokerClient do
         before(:each) do
           @options = {}
           @brokers = [@identity1, @identity2]
+          @ha = RightAMQP::HABrokerClient.new(@serializer, :host => "first, second")
           @context = RightAMQP::HABrokerClient::Context.new(@packet, @options, @brokers)
+          flexmock(@ha.instance_variable_get(:@published)).should_receive(:fetch).with(@message).and_return(@context).by_default
         end
 
         it "should republish using a broker not yet tried if possible and log that re-routing" do
           @logger.should_receive(:info).with(/RE-ROUTE/).once
           @logger.should_receive(:info).with(/RETURN reason/).once
-          ha = RightAMQP::HABrokerClient.new(@serializer, :host => "first, second")
-          @context.record_failure(@identity1)
           @broker2.should_receive(:publish).and_return(true).once
-          ha.__send__(:handle_return, @identity1, "reason", @message, "to", @context)
+          @context.record_failure(@identity1)
+          @ha.__send__(:handle_return, @identity1, "to", "reason", @message)
         end
 
         it "should republish to same broker without mandatory if message is persistent and no other brokers available" do
           @logger.should_receive(:info).with(/RE-ROUTE/).once
           @logger.should_receive(:info).with(/RETURN reason/).once
-          ha = RightAMQP::HABrokerClient.new(@serializer, :host => "first, second")
           @context.record_failure(@identity1)
           @context.record_failure(@identity2)
           @packet.should_receive(:persistent).and_return(true)
           @broker1.should_receive(:publish).and_return(true).once
-          ha.__send__(:handle_return, @identity2, "NO_CONSUMERS", @message, "to", @context)
+          @ha.__send__(:handle_return, @identity2, "to", "NO_CONSUMERS", @message)
         end
 
         it "should republish to same broker without mandatory if message is one-way and no other brokers available" do
           @logger.should_receive(:info).with(/RE-ROUTE/).once
           @logger.should_receive(:info).with(/RETURN reason/).once
-          ha = RightAMQP::HABrokerClient.new(@serializer, :host => "first, second")
           @context.record_failure(@identity1)
           @context.record_failure(@identity2)
           @packet.should_receive(:one_way).and_return(true)
           @broker1.should_receive(:publish).and_return(true).once
-          ha.__send__(:handle_return, @identity2, "NO_CONSUMERS", @message, "to", @context)
+          @ha.__send__(:handle_return, @identity2, "to", "NO_CONSUMERS", @message)
         end
 
         it "should update status to :stopping if message returned because access refused" do
           @logger.should_receive(:info).with(/RE-ROUTE/).once
           @logger.should_receive(:info).with(/RETURN reason/).once
-          ha = RightAMQP::HABrokerClient.new(@serializer, :host => "first, second")
           @context.record_failure(@identity1)
           @broker2.should_receive(:publish).and_return(true).once
           @broker1.should_receive(:update_status).with(:stopping).and_return(true).once
-          ha.__send__(:handle_return, @identity1, "ACCESS_REFUSED", @message, "to", @context)
+          @ha.__send__(:handle_return, @identity1, "to", "ACCESS_REFUSED", @message)
         end
 
         it "should log info and make non-delivery call even if persistent when returned because of no queue" do
           @logger.should_receive(:info).with(/NO ROUTE/).once
           @logger.should_receive(:info).with(/RETURN reason/).once
-          ha = RightAMQP::HABrokerClient.new(@serializer, :host => "first, second")
           called = 0
-          ha.non_delivery { |reason, type, token, from, to| called += 1 }
+          @ha.non_delivery { |reason, type, token, from, to| called += 1 }
           @context.record_failure(@identity1)
           @context.record_failure(@identity2)
           @packet.should_receive(:persistent).and_return(true)
           @broker1.should_receive(:publish).and_return(true).never
           @broker2.should_receive(:publish).and_return(true).never
-          ha.__send__(:handle_return, @identity2, "NO_QUEUE", @message, "to", @context)
+          @ha.__send__(:handle_return, @identity2, "to", "NO_QUEUE", @message)
           called.should == 1
         end
 
         it "should log info and make non-delivery call if no route can be found" do
           @logger.should_receive(:info).with(/NO ROUTE/).once
           @logger.should_receive(:info).with(/RETURN reason/).once
-          ha = RightAMQP::HABrokerClient.new(@serializer, :host => "first, second")
           called = 0
-          ha.non_delivery { |reason, type, token, from, to| called += 1 }
+          @ha.non_delivery { |reason, type, token, from, to| called += 1 }
           @context.record_failure(@identity1)
           @context.record_failure(@identity2)
           @broker1.should_receive(:publish).and_return(true).never
           @broker2.should_receive(:publish).and_return(true).never
-          ha.__send__(:handle_return, @identity2, "any reason", @message, "to", @context)
+          @ha.__send__(:handle_return, @identity2, "to", "any reason", @message)
           called.should == 1
         end
 
         it "should log info if no message context available for re-routing it" do
           @logger.should_receive(:info).with(/Dropping/).once
-          ha = RightAMQP::HABrokerClient.new(@serializer, :host => "first, second")
-          ha.__send__(:handle_return, @identity2, "any reason", @message, "to", nil)
+          flexmock(@ha.instance_variable_get(:@published)).should_receive(:fetch).with(@message).and_return(nil).once
+          @ha.__send__(:handle_return, @identity2, "to", "any reason", @message)
         end
 
       end
@@ -1000,7 +981,6 @@ describe RightAMQP::HABrokerClient do
         @broker.should_receive(:usable?).and_return(true).by_default
         @broker.should_receive(:connected?).and_return(true).by_default
         @broker.should_receive(:subscribe).and_return(true).by_default
-        @broker.should_receive(:return_message).and_return(true).by_default
         flexmock(RightAMQP::BrokerClient).should_receive(:new).and_return(@broker).by_default
         @broker1.should_receive(:failed?).and_return(false).by_default
         @broker2.should_receive(:failed?).and_return(false).by_default

@@ -47,6 +47,8 @@ describe RightAMQP::BrokerClient do
     flexmock(AMQP).should_receive(:connect).and_return(@connection).by_default
     @channel = flexmock("AMQP connection channel")
     @channel.should_receive(:connection).and_return(@connection).by_default
+    @channel.should_receive(:return_message).and_return(true).by_default
+    flexmock(MQ).should_receive(:new).and_return(@channel).by_default
     @identity = "rs-broker-localhost-5672"
     @address = {:host => "localhost", :port => 5672, :index => 0}
     @options = {}
@@ -107,9 +109,15 @@ describe RightAMQP::BrokerClient do
       RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
     end
 
-    it "should set broker prefetch value if specified" do
+    it "should set broker prefetch value only if specified" do
       @channel.should_receive(:prefetch).with(1).once
+      RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
       RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, {:prefetch => 1})
+    end
+
+    it "should setup for message return" do
+      @channel.should_receive(:return_message).with(Proc).once
+      RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
     end
 
   end # when initializing connection
@@ -363,14 +371,14 @@ describe RightAMQP::BrokerClient do
       broker.__send__(:unserialize, "queue", @message, RequestMock => nil).should == @packet
     end
 
-    it "should log a warning if the message is not of the right type and return nil" do
-      @logger.should_receive(:warning).with(/Received invalid.*packet type/).once
+    it "should log an error if the message is not of the right type and return nil" do
+      @logger.should_receive(:error).with(/Received invalid.*packet type/).once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
       broker.__send__(:unserialize, "queue", @message).should be_nil
     end
 
-    it "should show the category in the warning message if specified" do
-      @logger.should_receive(:warning).with(/Received invalid xxxx packet type/).once
+    it "should show the category in the error message if specified" do
+      @logger.should_receive(:error).with(/Received invalid xxxx packet type/).once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
       broker.__send__(:unserialize, "queue", @message, ResultMock => nil, :category => "xxxx")
     end
@@ -706,64 +714,56 @@ describe RightAMQP::BrokerClient do
 
   context "when returning" do
 
-    class MQ
-      attr_accessor :connection, :on_return_message
-
-      def initialize(connection)
-        @connection = connection
-      end
-
-      def return_message(&blk)
-        @on_return_message = blk
-      end
-    end
-
     before(:each) do
       @header = flexmock("header", :reply_text => "NO_CONSUMERS", :exchange => "exchange", :routing_key => "routing_key").by_default
     end
 
-    it "should invoke block and log the return" do
+    it "should make callback" do
       @logger.should_receive(:info).with(/Connecting to broker/).once
-      @logger.should_receive(:debug).with(/RETURN b0/).once
-      broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
+      @logger.should_receive(:debug).with(/RETURN b0 for exchange because NO_CONSUMERS/).once
       called = 0
-      broker.return_message do |to, reason, message|
+      callback = lambda do |identity, to, reason, message|
         called += 1
+        identity.should == @identity
         to.should == "exchange"
         reason.should == "NO_CONSUMERS"
         message.should == @message
       end
-      broker.instance_variable_get(:@channel).on_return_message.call(@header, @message)
+      @options = {:return_message_callback => callback }
+      broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
+      broker.__send__(:handle_return, @header, @message).should be_true
       called.should == 1
     end
 
-    it "should invoke block with routing key if exchange is empty" do
-      @logger.should_receive(:debug)
+    it "should log the return as info if there is no callback" do
+      @logger.should_receive(:info).with(/Connecting to broker/)
+      @logger.should_receive(:info).with("RETURN b0 for exchange because NO_CONSUMERS").once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
-      called = 0
-      broker.return_message do |to, reason, message|
-        called += 1
-        to.should == "routing_key"
-        reason.should == "NO_CONSUMERS"
-        message.should == @message
-      end
+      broker.__send__(:handle_return, @header, @message).should be_true
+    end
+
+    it "should log the return as debug if there is a callback" do
+      @logger.should_receive(:debug).with("RETURN b0 for exchange because NO_CONSUMERS").once
+      @options = {:return_message_callback => lambda { |i, t, r, m| } }
+      broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
+      broker.__send__(:handle_return, @header, @message).should be_true
+    end
+
+    it "should log the return with routing key if exchange is empty" do
+      @logger.should_receive(:info).with(/Connecting to broker/)
+      @logger.should_receive(:info).with("RETURN b0 for routing_key because NO_CONSUMERS").once
       @header.should_receive(:exchange).and_return("")
-      broker.instance_variable_get(:@channel).on_return_message.call(@header, @message)
-      called.should == 1
+      broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
+      broker.__send__(:handle_return, @header, @message).should be_true
     end
 
     it "should log an error if there is a failure while processing the return" do
+      @logger.should_receive(:debug).with("RETURN b0 for exchange because NO_CONSUMERS")
       @logger.should_receive(:error).with(/Failed return/).once
-      @logger.should_receive(:debug)
       @exceptions.should_receive(:track).once
+      @options = {:return_message_callback => lambda { |i, t, r, m| raise Exception } }
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
-      called = 0
-      broker.return_message do |to, reason, message|
-        called += 1
-        raise Exception
-      end
-      broker.instance_variable_get(:@channel).on_return_message.call(@header, @message)
-      called.should == 1
+      broker.__send__(:handle_return, @header, @message).should be_true
     end
 
   end # when returning

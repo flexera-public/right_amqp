@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    right_amqp (0.5.0)
+    right_amqp (0.5.1)
       eventmachine (~> 0.12.10)
       right_support (>= 1.2, < 3.0)
 

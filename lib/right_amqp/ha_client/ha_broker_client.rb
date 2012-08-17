@@ -136,6 +136,7 @@ module RightAMQP
     def initialize(serializer, options = {})
       @options = options.dup
       @options[:update_status_callback] = lambda { |b, c| update_status(b, c) }
+      @options[:return_message_callback] = lambda { |i, t, r, m| handle_return(i, t, r, m) }
       @options[:reconnect_interval] ||= RECONNECT_INTERVAL
       @connection_status = {}
       unless serializer.nil? || [:dump, :load].all? { |m| serializer.respond_to?(m) }
@@ -149,7 +150,6 @@ module RightAMQP
       @closed = false
       @brokers_hash = {}
       @brokers.each { |b| @brokers_hash[b.identity] = b }
-      return_message { |i, r, m, t, c| handle_return(i, r, m, t, c) }
     end
 
     # Parse agent user data to extract broker host and port configuration
@@ -554,6 +554,10 @@ module RightAMQP
     #       to force it to be declared on the broker and thus be created if it does not exist
     # packet(Packet):: Message to serialize and publish
     # options(Hash):: Publish options -- standard AMQP ones plus
+    #   :mandatory(Boolean):: Return message if the exchange does not have any associated queues
+    #     or if all the associated queues do not have any consumers
+    #   :immediate(Boolean):: Return message for the same reasons as :mandatory plus if all
+    #     of the queues associated with the exchange are not immediately ready to consume the message
     #   :fanout(Boolean):: true means publish to all connected brokers
     #   :brokers(Array):: Identity of brokers selected for use, defaults to all home brokers
     #     if nil or empty
@@ -592,38 +596,6 @@ module RightAMQP
         raise NoConnectedBrokers, "None of #{selected}brokers [#{list}] are usable for publishing"
       end
       identities
-    end
-
-    # Register callback to be activated when a broker returns a message that could not be delivered
-    # A message published with :mandatory => true is returned if the exchange does not have any associated queues
-    # or if all the associated queues do not have any consumers
-    # A message published with :immediate => true is returned for the same reasons as :mandatory plus if all
-    # of the queues associated with the exchange are not immediately ready to consume the message
-    # Remove any previously registered callback
-    #
-    # === Block
-    # Required block to be called when a message is returned with parameters
-    #   identity(String):: Broker serialized identity
-    #   reason(String):: Reason for return
-    #     "NO_ROUTE" - queue does not exist
-    #     "NO_CONSUMERS" - queue exists but it has no consumers, or if :immediate was specified,
-    #       all consumers are not immediately ready to consume
-    #     "ACCESS_REFUSED" - queue not usable because broker is in the process of stopping service
-    #   message(String):: Returned serialized message
-    #   to(String):: Queue to which message was published
-    #   context(Context|nil):: Message publishing context, or nil if not available
-    #
-    # === Return
-    # true:: Always return true
-    def return_message(&blk)
-      each_usable do |b|
-        b.return_message do |to, reason, message|
-          context = @published.fetch(message)
-          context.record_failure(b.identity) if context
-          blk.call(b.identity, reason, message, to, context)
-        end
-      end
-      true
     end
 
     # Provide callback to be activated when a message cannot be delivered
@@ -1034,22 +1006,22 @@ module RightAMQP
     #
     # === Parameters
     # identity(String):: Identity of broker that could not deliver message
+    # to(String):: Queue to which message was published
     # reason(String):: Reason for return
     #   "NO_ROUTE" - queue does not exist
     #   "NO_CONSUMERS" - queue exists but it has no consumers, or if :immediate was specified,
     #     all consumers are not immediately ready to consume
     #   "ACCESS_REFUSED" - queue not usable because broker is in the process of stopping service
     # message(String):: Returned message in serialized packet format
-    # to(String):: Queue to which message was published
-    # context(Context):: Message publishing context
     #
     # === Return
     # true:: Always return true
-    def handle_return(identity, reason, message, to, context)
+    def handle_return(identity, to, reason, message)
       @brokers_hash[identity].update_status(:stopping) if reason == "ACCESS_REFUSED"
 
-      if context
+      if context = @published.fetch(message)
         @return_stats.update("#{alias_(identity)} (#{reason.to_s.downcase})")
+        context.record_failure(identity)
         name = context.name
         options = context.options || {}
         token = context.token

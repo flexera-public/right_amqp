@@ -107,6 +107,15 @@ module RightAMQP
     #   :update_status_callback(Proc):: Callback activated on a connection status change with parameters
     #     broker(BrokerClient):: Broker client
     #     connected_before(Boolean):: Whether was connected prior to this status change
+    #   :return_message_callback(Proc):: Callback activated when a message is returned with parameters
+    #     to(String):: Queue to which message was published
+    #     reason(String):: Reason for return
+    #       "NO_ROUTE" - queue does not exist
+    #       "NO_CONSUMERS" - queue exists but it has no consumers, or if :immediate was specified,
+    #         all consumers are not immediately ready to consume
+    #       "ACCESS_REFUSED" - queue not usable because broker is in the process of stopping service
+    #     message(String):: Returned serialized message
+    #
     # existing(BrokerClient|nil):: Existing broker client for this address, or nil if none
     #
     # === Raise
@@ -180,7 +189,7 @@ module RightAMQP
     # Subscribe an AMQP queue to an AMQP exchange
     # Do not wait for confirmation from broker that subscription is complete
     # When a message is received, acknowledge, unserialize, and log it as specified
-    # If the message is unserialized and it is not of the right type, it is dropped after logging a warning
+    # If the message is unserialized and it is not of the right type, it is dropped after logging an error
     #
     # === Parameters
     # queue(Hash):: AMQP queue being subscribed with keys :name and :options,
@@ -373,39 +382,6 @@ module RightAMQP
       end
     end
 
-    # Provide callback to be activated when broker returns a message that could not be delivered
-    # A message published with :mandatory => true is returned if the exchange does not have any associated queues
-    # or if all the associated queues do not have any consumers
-    # A message published with :immediate => true is returned for the same reasons as :mandatory plus if all
-    # of the queues associated with the exchange are not immediately ready to consume the message
-    #
-    # === Block
-    # Optional block with following parameters to be called when a message is returned
-    #   to(String):: Queue to which message was published
-    #   reason(String):: Reason for return
-    #     "NO_ROUTE" - queue does not exist
-    #     "NO_CONSUMERS" - queue exists but it has no consumers, or if :immediate was specified,
-    #       all consumers are not immediately ready to consume
-    #     "ACCESS_REFUSED" - queue not usable because broker is in the process of stopping service
-    #   message(String):: Returned serialized message
-    #
-    # === Return
-    # true:: Always return true
-    def return_message
-      @channel.return_message do |info, message|
-        begin
-          to = if info.exchange && !info.exchange.empty? then info.exchange else info.routing_key end
-          reason = info.reply_text
-          logger.debug("RETURN #{@alias} because #{reason} for #{to}")
-          yield(to, reason, message) if block_given?
-        rescue Exception => e
-          logger.exception("Failed return #{info.inspect} of message from broker #{@alias}", e, :trace)
-          @exception_stats.track("return", e)
-        end
-      end
-      true
-    end
-
     # Delete queue
     #
     # === Parameters
@@ -569,7 +545,7 @@ module RightAMQP
     protected
 
     # Connect to broker and register for status updates
-    # Also set prefetch value if specified
+    # Also set prefetch value if specified and setup for message returns
     #
     # === Parameters
     # address(Hash):: Broker address
@@ -598,6 +574,7 @@ module RightAMQP
         @channel = MQ.new(@connection)
         @channel.__send__(:connection).connection_status { |status| update_status(status) }
         @channel.prefetch(@options[:prefetch]) if @options[:prefetch]
+        @channel.return_message { |header, message| handle_return(header, message) }
       rescue Exception => e
         @status = :failed
         @failure_stats.update
@@ -680,7 +657,7 @@ module RightAMQP
           packet
         else
           category = options[:category] + " " if options[:category]
-          logger.warning("Received invalid #{category}packet type from queue #{queue} on broker #{@alias}: #{packet.class}\n" + caller.join("\n"))
+          logger.error("Received invalid #{category}packet type from queue #{queue} on broker #{@alias}: #{packet.class}\n" + caller.join("\n"))
           nil
         end
       rescue Exception => e
@@ -716,6 +693,28 @@ module RightAMQP
         @last_failed = true
         @retries = 0
         @failure_stats.update
+      end
+      true
+    end
+
+    # Handle message returned by broker because it could not deliver it
+    #
+    # === Parameters
+    # header(AMQP::Protocol::Header):: Message header
+    # message(String):: Serialized packet
+    #
+    # === Return
+    # true:: Always return true
+    def handle_return(header, message)
+      begin
+        to = if header.exchange && !header.exchange.empty? then header.exchange else header.routing_key end
+        reason = header.reply_text
+        callback = @options[:return_message_callback]
+        logger.__send__(callback ? :debug : :info, "RETURN #{@alias} for #{to} because #{reason}")
+        callback.call(@identity, to, reason, message) if callback
+      rescue Exception => e
+        logger.exception("Failed return #{header.inspect} of message from broker #{@alias}", e, :trace)
+        @exception_stats.track("return", e)
       end
       true
     end
