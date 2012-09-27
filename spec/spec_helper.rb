@@ -44,6 +44,7 @@ module RightAMQP
     def setup_logger
       @logger = flexmock("logger")
       @logger.should_receive(:level).and_return(:info).by_default
+      @logger.should_receive(:exception).by_default.and_return { |m| raise m }
       @logger.should_receive(:error).by_default.and_return { |m| raise m }
       @logger.should_receive(:warning).by_default.and_return { |m| raise m }
       @logger.should_receive(:info).by_default
