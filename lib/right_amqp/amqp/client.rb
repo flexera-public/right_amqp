@@ -247,13 +247,7 @@ module AMQP
     def reconnect force = false
       if @reconnecting and not force
         # Wait after first reconnect attempt and in between each subsequent attempt
-        EM.add_timer(@settings[:reconnect_interval] || 5) do
-          begin
-            reconnect(true)
-          rescue Exception => e
-            logger.exception("[amqp] Failed to reconnect", e, :trace)
-          end
-        end
+        EM.add_timer(@settings[:reconnect_interval] || 5) { reconnect(true) }
         return
       end
 
@@ -271,13 +265,7 @@ module AMQP
         again = again.call if again.is_a?(Proc)
         if again.is_a?(Numeric)
           # Wait before making initial reconnect attempt
-          EM.add_timer(again) do
-            begin
-              reconnect(true)
-            rescue Exception => e
-              logger.exception("[amqp] Failed to reconnect", e, :trace)
-            end
-          end
+          EM.add_timer(again) { reconnect(true) }
           return
         elsif ![nil, true].include?(again)
           raise ::AMQP::Error, "Could not interpret :reconnect_delay => #{again.inspect}; expected nil, true, or Numeric"
@@ -287,6 +275,9 @@ module AMQP
       log 'reconnecting'
       logger.info("[amqp] Attempting to reconnect to #{@settings[:identity]}")
       EM.reconnect(@settings[:host], @settings[:port], self)
+    rescue Exception => e
+      logger.exception("[amqp] Failed to reconnect", e, :trace)
+      failed
     end
 
     def self.connect opts = {}
@@ -300,14 +291,14 @@ module AMQP
 
     def failed
       @connection_status.call(:failed) if @connection_status
-      @failed = true
+      @has_failed = true
       close_connection
     end
 
     private
 
     def disconnected
-      unless @failed
+      unless @has_failed
         @connection_status.call(:disconnected) if @connection_status
         reconnect
       end
