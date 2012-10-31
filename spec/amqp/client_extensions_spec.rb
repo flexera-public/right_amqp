@@ -33,7 +33,7 @@ describe AMQP::Client do
     class SUT
       include AMQP::Client
 
-      attr_accessor :reconnecting, :settings, :channels
+      attr_accessor :reconnecting, :settings, :channels, :has_failed
     end
 
     before(:each) do
@@ -88,7 +88,7 @@ describe AMQP::Client do
       end
     end
 
-    context 'with a :reconnect_interval of 5 seconds'  do
+    context 'with a :reconnect_interval of 5 seconds' do
       it 'should schedule reconnect attempts on a 5s interval' do
         @sut.reconnecting = true
         @sut.settings[:reconnect_delay] = 15
@@ -98,6 +98,17 @@ describe AMQP::Client do
         flexmock(EM).should_receive(:add_timer).with(5, Proc).once
 
         @sut.reconnect()
+      end
+    end
+
+    context 'with a reconnect failure' do
+      it 'should fail the connection' do
+        @logger.should_receive(:error).with(/Failed to reconnect/).once
+        flexmock(EM).should_receive(:reconnect).and_raise(Exception).once
+        flexmock(@sut).should_receive(:close_connection).once
+
+        @sut.reconnect()
+        @sut.has_failed.should be_true
       end
     end
 
