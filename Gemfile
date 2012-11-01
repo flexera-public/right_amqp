@@ -7,7 +7,7 @@ gemspec
 # Lock eventmachine to a published and well-tested version to avoid picking up
 # proprietary builds that happen to be installed locally
 group :custom do
-  gem "eventmachine", "0.12.11.6"
+  gem "eventmachine", "1.0.0.1"
 end
 
 group :development do
