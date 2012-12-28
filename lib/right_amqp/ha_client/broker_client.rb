@@ -132,7 +132,7 @@ module RightAMQP
         raise ArgumentError, "serializer must be a class/object that responds to :dump and :load"
       end
       @serializer         = serializer
-      @queues             = []
+      @queues             = {}
       @last_failed        = false
       @exception_stats    = exception_stats
       @non_delivery_stats = non_delivery_stats
@@ -233,7 +233,7 @@ module RightAMQP
     def subscribe(queue, exchange = nil, options = {}, &block)
       raise ArgumentError, "Must call this method with a block" unless block
       return false unless usable?
-      return true unless @queues.select { |q| q.name == queue[:name] }.empty?
+      return true unless @queues[queue[:name]]
 
       to_exchange =  if exchange
         if options[:exchange2]
@@ -243,19 +243,18 @@ module RightAMQP
         end
       end
       queue_options = queue[:options] || {}
-      exchange_options = (exchange && exchange[:options]) || {}
+      exchange_options = exchange && exchange[:options]
 
       begin
         logger.info("[setup] Subscribing queue #{queue[:name]}#{to_exchange} on broker #{@alias}")
         q = @channel.queue(queue[:name], queue_options)
-        @queues << q
+        @queues[queue[:name]] = q
         if exchange
           x = @channel.__send__(exchange[:type], exchange[:name], exchange_options)
-          binding = q.bind(x, options[:key] ? {:key => options[:key]} : {})
+          q.bind(x, options[:key] ? {:key => options[:key]} : {})
           if exchange2 = options[:exchange2]
-            q.bind(@channel.__send__(exchange2[:type], exchange2[:name], exchange2[:options] || {}))
+            q.bind(@channel.__send__(exchange2[:type], exchange2[:name], exchange2[:options]))
           end
-          q = binding
         end
         q.subscribe(options[:ack] ? {:ack => true} : {}) do |header, message|
           begin
@@ -291,9 +290,9 @@ module RightAMQP
     # === Return
     # true:: Always return true
     def unsubscribe(queue_names, &block)
-      if usable?
-        @queues.each do |q|
-          if queue_names.include?(q.name)
+      if usable? && 
+        queue_names.each do |name|
+          if (q = @queues[name])
             begin
               logger.info("[stop] Unsubscribing queue #{q.name} on broker #{@alias}")
               q.unsubscribe { block.call if block }
@@ -305,6 +304,50 @@ module RightAMQP
           end
         end
       end
+      true
+    end
+
+    # Bind an existing queue to an additional exchange/routing key
+    #
+    # === Parameters
+    # queue_name(String):: Queue name
+    # exchange_name(String):: Exchange name
+    # options(Hash):: Bind options:
+    #   :key(String):: Routing key for the binding
+    #
+    # === Raise
+    # ArgumentError:: If queue is unknown because it was not previously subscribed to
+    #
+    # === Return
+    # true:: Always return true
+    def bind(queue_name, exchange_name, options)
+      q = @queues[queue_name]
+      raise ArgumentError, "Unknown queue: #{queue_name.inspect}" unless q
+      for_routing_key = options[:key] ? " for routing key #{options[:key]}" : ""
+      logger.info("[setup] Binding queue #{queue_name} to exchange #{exchange_name}#{for_routing_key} on broker #{@alias}")
+      q.bind(exchange_name, options)
+      true
+    end
+
+    # Unbind a queue from an exchange/routing key
+    #
+    # === Parameters
+    # queue_name(String):: Queue name
+    # exchange_name(String):: Exchange name
+    # options(Hash):: Unbind options:
+    #   :key(String):: Routing key for the binding
+    #
+    # === Raise
+    # ArgumentError:: If queue is unknown because it was not previously subscribed to
+    #
+    # === Return
+    # true:: Always return true
+    def unbind(queue_name, exchange_name, options)
+      q = @queues[queue_name]
+      raise ArgumentError, "Unknown queue: #{queue_name.inspect}" unless q
+      for_routing_key = options[:key] ? " for routing key #{options[:key]}" : ""
+      logger.info("[setup] Unbinding queue #{queue_name} from exchange #{exchange_name}#{for_routing_key} on broker #{@alias}")
+      q.unbind(exchange_name, options)
       true
     end
 
@@ -394,18 +437,14 @@ module RightAMQP
       deleted = false
       if usable?
         begin
-          @queues.reject! do |q|
-            if q.name == name
-              @channel.queue(name, options.merge(:no_declare => true)).delete
-              deleted = true
-            end
-          end
-          unless deleted
+          if @queues.delete(name)
+            @channel.queue(name, options.merge(:no_declare => true)).delete
+          else
             # Allowing declare to happen since queue may not exist and do not want NOT_FOUND
             # failure to cause AMQP channel to close
             @channel.queue(name, options).delete
-            deleted = true
           end
+          deleted = true
         rescue Exception => e
           logger.exception("Failed deleting queue #{name.inspect} on broker #{@alias}", e, :trace)
           @exception_stats.track("delete", e)

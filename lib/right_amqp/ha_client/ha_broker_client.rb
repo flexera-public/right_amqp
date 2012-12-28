@@ -523,6 +523,42 @@ module RightAMQP
       true
     end
 
+    # Bind an existing queue to an additional exchange/routing key on usable broker clients
+    #   
+    # === Parameters
+    # queue_name(String):: Queue name
+    # exchange_name(String):: Exchange name
+    # options(Hash):: Bind options:
+    #   :key(String):: Routing key for the binding
+    #   
+    # === Raise
+    # ArgumentError:: If queue is unknown because it was not previously subscribed to
+    #   
+    # === Return
+    # true:: Always return true
+    def bind(queue_name, exchange_name, options)
+      each_usable { |b| b.bind(queue_name, exchange_name, options) }
+      true
+    end 
+
+    # Unbind a queue from an exchange/routing key on usable broker clients
+    #   
+    # === Parameters
+    # queue_name(String):: Queue name
+    # exchange_name(String):: Exchange name
+    # options(Hash):: Unbind options:
+    #   :key(String):: Routing key for the binding
+    #   
+    # === Raise
+    # ArgumentError:: If queue is unknown because it was not previously subscribed to
+    #   
+    # === Return
+    # true:: Always return true
+    def unbind(queue_name, exchange_name, options)
+      each_usable { |b| b.unbind(queue_name, exchange_name, options) }
+      true
+    end 
+
     # Declare queue or exchange object but do not subscribe to it
     #
     # === Parameters

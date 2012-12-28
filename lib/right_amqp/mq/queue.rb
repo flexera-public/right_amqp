@@ -110,10 +110,10 @@ class MQ
     #
     def bind exchange, opts = {}
       exchange = exchange.respond_to?(:name) ? exchange.name : exchange
-      @bindings[exchange] = opts
+      @bindings[exchange] = (@bindings[exchange] || []) << opts
 
       @mq.callback{
-        @mq.send Protocol::Queue::Bind.new({ :queue => name,
+        @mq.send Protocol::Queue::Bind.new({ :queue => @name,
                                              :exchange => exchange,
                                              :routing_key => opts[:key],
                                              :nowait => true }.merge(opts))
@@ -136,13 +136,21 @@ class MQ
     # method it will raise a channel or connection exception.
     #
     def unbind exchange, opts = {}
+      routing_key = opts[:key]
       exchange = exchange.respond_to?(:name) ? exchange.name : exchange
-      @bindings.delete exchange
+      if (opts_list = @bindings[exchange])
+        delete = true
+        if routing_key
+          opts_list.reject! { |o| o[:key] == routing_key }
+          delete = opts_list.empty?
+        end
+        @bindings.delete exchange if delete
+      end
 
       @mq.callback{
-        @mq.send Protocol::Queue::Unbind.new({ :queue => name,
+        @mq.send Protocol::Queue::Unbind.new({ :queue => @name,
                                                :exchange => exchange,
-                                               :routing_key => opts[:key],
+                                               :routing_key => routing_key,
                                                :nowait => true }.merge(opts))
       }
       self
@@ -435,7 +443,7 @@ class MQ
 
       binds = @bindings
       @bindings = {}
-      binds.each{|ex,opts| bind(ex, opts) }
+      binds.each { |ex,opts| opts.each { |o| bind(ex, o) } }
 
       if blk = @on_msg
         @on_msg = nil
