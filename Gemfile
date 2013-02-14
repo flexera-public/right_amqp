@@ -4,11 +4,7 @@ source 'http://s3.amazonaws.com/rightscale_rightlink_gems_dev'
 
 gemspec
 
-# Lock eventmachine to a published and well-tested version to avoid picking up
-# proprietary builds that happen to be installed locally
-group :custom do
-  gem "eventmachine", "1.0.0.2"
-end
+gem "eventmachine", "1.0.0"
 
 group :development do
   gem "rake",         "0.9.2.2"
