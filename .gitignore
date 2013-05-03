@@ -1,8 +1,6 @@
 .idea
 *.swp
-.rvmrc
-.rvmrc*
-.bundle
+.ruby-version
 tmp/*
 pkg/*
 doc/rdocs/*

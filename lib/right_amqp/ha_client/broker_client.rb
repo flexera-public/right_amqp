@@ -646,7 +646,7 @@ module RightAMQP
     def unserialize(queue, message, options = {})
       begin
         received_at = Time.now.to_f
-        packet = @serializer.load(message)
+        packet = @serializer.method(:load).arity.abs > 1 ? @serializer.load(message, queue) : @serializer.load(message)
         if options.key?(packet.class)
           unless options[:no_log] && logger.level != :debug
             re = "RE-" if packet.respond_to?(:tries) && !packet.tries.empty?
