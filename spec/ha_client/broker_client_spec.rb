@@ -38,6 +38,8 @@ describe RightAMQP::BrokerClient do
     @serializer = flexmock("serializer")
     @serializer.should_receive(:dump).and_return(@message).by_default
     @serializer.should_receive(:load).with(@message).and_return(@packet).by_default
+    @load = flexmock("load method", :arity => 1).by_default
+    @serializer.should_receive(:method).with(:load).and_return(@load).by_default
     @exceptions = flexmock("exceptions")
     @exceptions.should_receive(:track).never.by_default
     @non_deliveries = flexmock("non-deliveries")
@@ -367,6 +369,14 @@ describe RightAMQP::BrokerClient do
     it "should unserialize the message, log it, and return it" do
       @logger.should_receive(:info).with(/Connecting/).once
       @logger.should_receive(:info).with(/^RECV/).once
+      broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
+      broker.__send__(:unserialize, "queue", @message, RequestMock => nil).should == @packet
+    end
+
+    it "should pass queue to serializer load method if arity is greater than 1" do
+      @load.should_receive(:arity).and_return(2).once
+      @serializer.should_receive(:method).with(:load).and_return(@load).once
+      @serializer.should_receive(:load).with(@message, "queue").and_return(@packet).once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
       broker.__send__(:unserialize, "queue", @message, RequestMock => nil).should == @packet
     end
