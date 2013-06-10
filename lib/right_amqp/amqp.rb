@@ -112,4 +112,8 @@ module AMQP
       yield
     end
   end
+
+  def self.connected?
+    !!@conn
+  end
 end
