@@ -264,6 +264,9 @@ module RightAMQP
             else
               receive(queue[:name], header, message, options, &block)
             end
+          rescue SystemExit
+            # Do not want to track exit exception that could occur during serialization
+            raise
           rescue Exception => e
             header.ack if options[:ack]
             logger.exception("Failed setting up to receive message from queue #{queue.inspect} " +
@@ -621,6 +624,9 @@ module RightAMQP
           header.ack
         end
         true
+      rescue SystemExit
+        # Do not want to track exit exception that could occur during serialization
+        raise
       rescue Exception => e
         header.ack if options[:ack]
         logger.exception("Failed receiving message from queue #{queue.inspect} on broker #{@alias}", e, :trace)
@@ -660,6 +666,9 @@ module RightAMQP
           logger.error("Received invalid #{category}packet type from queue #{queue} on broker #{@alias}: #{packet.class}\n" + caller.join("\n"))
           nil
         end
+      rescue SystemExit
+        # Do not want to track exit exception that could occur during serialization
+        raise
       rescue Exception => e
         # TODO Taking advantage of Serializer knowledge here even though out of scope
         trace = e.class.name =~ /SerializationError/ ? :caller : :trace
