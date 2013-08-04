@@ -968,18 +968,18 @@ module RightAMQP
           update = if v[:boundary] == :all
             if b.size < n && a.size == n
               :connected
-            elsif b.size == n && a.size < n
-              :disconnected
             elsif (f - failed).empty?
               :failed
+            elsif b.size == n && a.size < n
+              :disconnected
             end
           else
             if b.size == 0 && a.size > 0
               :connected
-            elsif b.size > 0 && a.size == 0
-              :disconnected
             elsif (f - failed).empty?
               :failed
+            elsif b.size > 0 && a.size == 0
+              :disconnected
             end
           end
           if update

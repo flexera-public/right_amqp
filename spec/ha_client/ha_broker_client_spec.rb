@@ -1235,9 +1235,66 @@ describe RightAMQP::HABrokerClient do
         ha.__send__(:update_status, @broker, false)
         @broker.should_receive(:status).and_return(:disconnected)
         @broker.should_receive(:connected?).and_return(false)
+        @broker.should_receive(:failed?).and_return(false)
         ha.__send__(:update_status, @broker, true)
         called1.should == 1
         called2.should == 2
+      end
+
+      it "should provide failed connection status callback when all broker connections fail with :any option" do
+        ha = RightAMQP::HABrokerClient.new(@serializer, :host => "first, second")
+        connected = disconnected = failed = 0
+        ha.connection_status(:boundary => :any) do |status|
+          if status == :connected
+            connected += 1
+          elsif status == :disconnected
+            disconnected += 1
+          elsif status == :failed
+            (ha.brokers[0].failed? &&
+             ha.brokers[1].failed?).should be_true
+            failed += 1
+          end
+        end
+        @broker2.should_receive(:failed?).and_return(true)
+        @broker2.should_receive(:connected?).and_return(false)
+        ha.__send__(:update_status, @broker2, true)
+        connected.should == 0
+        disconnected.should == 0
+        failed.should == 0
+        @broker1.should_receive(:failed?).and_return(true)
+        @broker1.should_receive(:connected?).and_return(false)
+        ha.__send__(:update_status, @broker1, true)
+        connected.should == 0
+        disconnected.should == 0
+        failed.should == 1
+      end
+
+      it "should provide failed connection status callback when all broker connections fail with :all option" do
+        ha = RightAMQP::HABrokerClient.new(@serializer, :host => "first, second")
+        connected = disconnected = failed = 0
+        ha.connection_status(:boundary => :all) do |status|
+          if status == :connected
+            connected += 1
+          elsif status == :disconnected
+            disconnected += 1
+          elsif status == :failed
+            (ha.brokers[0].failed? &&
+             ha.brokers[1].failed?).should be_true
+            failed += 1
+          end
+        end
+        @broker2.should_receive(:failed?).and_return(true)
+        @broker2.should_receive(:connected?).and_return(false)
+        ha.__send__(:update_status, @broker2, true)
+        connected.should == 0
+        disconnected.should == 1
+        failed.should == 0
+        @broker1.should_receive(:failed?).and_return(true)
+        @broker1.should_receive(:connected?).and_return(false)
+        ha.__send__(:update_status, @broker1, true)
+        connected.should == 0
+        disconnected.should == 1
+        failed.should == 1
       end
 
       it "should provide failed connection status callback when all brokers fail to connect" do
