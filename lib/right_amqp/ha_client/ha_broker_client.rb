@@ -352,7 +352,7 @@ module RightAMQP
     # === Return
     # (Array):: Serialized identity of usable brokers
     def usable
-      each_usable.map { |b| b.identity }
+      each(:usable).map { |b| b.identity }
     end
 
     # Get serialized identity of unusable brokers
@@ -490,9 +490,9 @@ module RightAMQP
     def subscribe(queue, exchange = nil, options = {}, &blk)
       identities = []
       brokers = options.delete(:brokers)
-      each_usable(brokers) { |b| identities << b.identity if b.subscribe(queue, exchange, options, &blk) }
+      each(:usable, brokers) { |b| identities << b.identity if b.subscribe(queue, exchange, options, &blk) }
       logger.info("Could not subscribe to queue #{queue.inspect} on exchange #{exchange.inspect} " +
-                  "on brokers #{each_usable(brokers).inspect} when selected #{brokers.inspect} " +
+                  "on brokers #{each(:usable, brokers).inspect} when selected #{brokers.inspect} " +
                   "from usable #{usable.inspect}") if identities.empty?
       identities
     end
@@ -510,7 +510,7 @@ module RightAMQP
     # === Return
     # true:: Always return true
     def unsubscribe(queue_names, timeout = nil, &blk)
-      count = each_usable.inject(0) do |c, b|
+      count = each(:usable).inject(0) do |c, b|
         c + b.queues.inject(0) { |c, q| c + (queue_names.include?(q.name) ? 1 : 0) }
       end
       if count == 0
@@ -518,7 +518,7 @@ module RightAMQP
       else
         handler = CountedDeferrable.new(count, timeout)
         handler.callback { blk.call if blk }
-        each_usable { |b| b.unsubscribe(queue_names) { handler.completed_one } }
+        each(:usable) { |b| b.unsubscribe(queue_names) { handler.completed_one } }
       end
       true
     end
@@ -536,10 +536,49 @@ module RightAMQP
     def declare(type, name, options = {})
       identities = []
       brokers = options.delete(:brokers)
-      each_usable(brokers) { |b| identities << b.identity if b.declare(type, name, options) }
-      logger.info("Could not declare #{type.to_s} #{name.inspect} on brokers #{each_usable(brokers).inspect} " +
+      each(:usable, brokers) { |b| identities << b.identity if b.declare(type, name, options) }
+      logger.info("Could not declare #{type.to_s} #{name.inspect} on brokers #{each(:usable, brokers).inspect} " +
                   "when selected #{brokers.inspect} from usable #{usable.inspect}") if identities.empty?
       identities
+    end
+
+    # Check status of specified queues for connected brokers
+    # Silently ignore unknown queues
+    # If a queue whose status is being checked does not exist,
+    # the associated broker connection will fail and be unusable
+    #
+    # === Parameters
+    # queue_names(Array):: Names of queues previously subscribed to that are to be checked
+    # timeout(Integer):: Number of seconds to wait for all status checks, defaults to no timeout
+    #
+    # === Block
+    # Optional block to be called after all queue statuses are obtained with hash parameter
+    # containing statuses with queue name as key and value that is a hash with broker identity
+    # as key and hash of :messages and :consumers as value; the :messages and :consumers
+    # values are nil if there is a failure retrieving them for the given queue
+    #
+    # === Return
+    # true:: Always return true
+    def queue_status(queue_names, timeout = nil, &blk)
+      count = 0
+      status = {}
+      each(:connected) { |b| b.queues.each { |q| count += 1 if queue_names.include?(q.name) } }
+      if count == 0
+        blk.call(status) if blk
+      else
+        handler = CountedDeferrable.new(count, timeout)
+        handler.callback { blk.call(status) if blk }
+        each(:connected) do |b|
+          if b.queue_status(queue_names) do |name, messages, consumers|
+               (status[name] ||= {})[b.identity] = {:messages => messages, :consumers => consumers}
+               handler.completed_one
+             end
+           else
+             b.queues.each { |q| handler.completed_one if queue_names.include?(q.name) }
+           end
+        end
+      end
+      true
     end
 
     # Publish message to AMQP exchange of first connected broker
@@ -559,7 +598,7 @@ module RightAMQP
     #   :immediate(Boolean):: Return message for the same reasons as :mandatory plus if all
     #     of the queues associated with the exchange are not immediately ready to consume the message
     #   :fanout(Boolean):: true means publish to all connected brokers
-    #   :brokers(Array):: Identity of brokers selected for use, defaults to all home brokers
+    #   :brokers(Array):: Identity of brokers selected for use, defaults to all brokers
     #     if nil or empty
     #   :order(Symbol):: Broker selection order: :random or :priority,
     #     defaults to @select if :brokers is nil, otherwise defaults to :priority
@@ -881,25 +920,26 @@ module RightAMQP
       bytes.unpack('H*')[0]
     end
 
-    # Iterate over clients that are usable, i.e., connecting or confirmed connected
+    # Iterate over clients that have the specified status
     #
     # === Parameters
+    # status(String):: Status for selecting: :usable, :connected, :failed
     # identities(Array):: Identity of brokers to be considered, nil or empty array means all brokers
     #
     # === Block
-    # Optional block with following parameters to be called for each usable broker client
+    # Optional block with following parameters to be called for each broker client selected
     #   broker(BrokerClient):: Broker client
     #
     # === Return
-    # (Array):: Usable broker clients
-    def each_usable(identities = nil)
+    # (Array):: Selected broker clients
+    def each(status, identities = nil)
       choices = if identities && !identities.empty?
-        choices = identities.inject([]) { |c, i| if b = @brokers_hash[i] then c << b else c end }
+        identities.inject([]) { |c, i| if b = @brokers_hash[i] then c << b else c end }
       else
         @brokers
       end
       choices.select do |b|
-        if b.usable?
+        if b.send("#{status}?".to_sym)
           yield(b) if block_given?
           true
         end
@@ -910,7 +950,7 @@ module RightAMQP
     #
     # === Parameters
     # options(Hash):: Selection options:
-    #   :brokers(Array):: Identity of brokers selected for use, defaults to all home brokers if nil or empty
+    #   :brokers(Array):: Identity of brokers selected for use, defaults to all brokers if nil or empty
     #   :order(Symbol):: Broker selection order: :random or :priority,
     #     defaults to @select if :brokers is nil, otherwise defaults to :priority
     #
