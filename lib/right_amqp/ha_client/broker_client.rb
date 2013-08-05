@@ -334,6 +334,38 @@ module RightAMQP
       end
     end
 
+    # Check status of specified queues
+    # Silently ignore unknown queues
+    # If a queue whose status is being checked does not exist in the broker,
+    # this broker connection will fail and become unusable
+    #
+    # === Parameters
+    # queue_names(Array):: Names of queues previously subscribed to
+    #
+    # === Block
+    # Optional block to be called each time that status for a queue is retrieved with
+    # parameters queue name, message count, and consumer count; the counts are nil
+    # if there was a failure while trying to retrieve them; the block is not called
+    # for queues to which this client is not currently subscribed
+    #
+    # === Return
+    # (Boolean):: true if connected, otherwise false, in which case block never gets called
+    def queue_status(queue_names, &block)
+      return false unless connected?
+      @queues.each do |q|
+        if queue_names.include?(q.name)
+          begin
+            q.status { |messages, consumers| block.call(q.name, messages, consumers) if block }
+          rescue Exception => e
+            logger.exception("Failed checking status of queue #{q.name} on broker #{@alias}", e, :trace)
+            @exception_stats.track("queue_status", e)
+            block.call(q.name, nil, nil) if block
+          end
+        end
+      end
+      true
+    end
+
     # Publish message to AMQP exchange
     #
     # === Parameters

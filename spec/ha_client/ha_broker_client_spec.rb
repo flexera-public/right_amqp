@@ -681,6 +681,59 @@ describe RightAMQP::HABrokerClient do
 
     end # declaring
 
+    context "checking status" do
+
+      before(:each) do
+        @timeout = 10
+        @timer = flexmock("timer", :cancel => true).by_default
+        flexmock(EM::Timer).should_receive(:new).with(@timeout, Proc).and_return(@timer).by_default
+        @queue_name = "my_queue"
+        @queue = flexmock("queue", :name => @queue_name)
+        @queues = [@queue]
+        @broker1.should_receive(:queues).and_return(@queues).by_default
+        @broker1.should_receive(:connected?).and_return(true).by_default
+        @broker1.should_receive(:queue_status).and_return(true).by_default
+        @broker2.should_receive(:queues).and_return(@queues).by_default
+        @broker2.should_receive(:connected?).and_return(true).by_default
+        @broker2.should_receive(:queue_status).and_return(true).by_default
+        @ha = RightAMQP::HABrokerClient.new(@serializer, :host => "first, second")
+      end
+
+      it "should not check status if there are no queues" do
+        @ha.queue_status([]).should be_true
+      end
+
+      it "should make block call with empty status if there are no queues" do
+        called = 0
+        @ha.queue_status(["my_other_queue"], @timeout) { |status| status.should == {}; called += 1 }.should be_true
+        called.should == 1
+      end
+
+      it "should wait to make callback until the status of all queues is obtained" do
+        @broker1.should_receive(:queue_status).with([@queue_name], Proc).and_return(true).and_yield(@queue_name, 0, 1).once
+        @broker2.should_receive(:queue_status).with([@queue_name], Proc).and_return(true).and_yield(@queue_name, 1, 2).once
+        called = 0
+        @ha.queue_status([@queue_name], @timeout) do |status|
+          status.should == {@queue_name => {@broker1.identity => {:messages => 0, :consumers => 1},
+                                            @broker2.identity => {:messages => 1, :consumers => 2}}}
+          called += 1
+        end.should be_true
+        called.should == 1
+      end
+
+      it "should account for queues for which status cannot be obtained" do
+        called = 0
+        @broker1.should_receive(:queue_status).with([@queue_name], Proc).and_return(false).once
+        @broker2.should_receive(:queue_status).with([@queue_name], Proc).and_return(true).and_yield(@queue_name, 1, 2).once
+        @ha.queue_status([@queue_name], @timeout) do |status|
+          status.should == {@queue_name => {@broker2.identity => {:messages => 1, :consumers => 2}}}
+          called += 1
+        end.should be_true
+        called.should == 1
+      end
+
+    end # checking status
+
     context "publishing" do
 
       before(:each) do
@@ -989,24 +1042,39 @@ describe RightAMQP::HABrokerClient do
         @broker3.should_receive(:failed?).and_return(false).by_default
       end
 
-      it "should give access to or list usable brokers" do
-        ha = RightAMQP::HABrokerClient.new(@serializer, :host => "first, second, third")
-        aliases = []
-        res = ha.__send__(:each_usable) { |b| aliases << b.alias }
-        aliases.should == ["b0", "b1", "b2"]
-        res.size.should == 3
-        res[0].alias.should == "b0"
-        res[1].alias.should == "b1"
-        res[2].alias.should == "b2"
+      [:usable, :connected].each do |status|
+        status_query = "#{status}?".to_sym
 
-        @broker1.should_receive(:usable?).and_return(true)
-        @broker2.should_receive(:usable?).and_return(false)
-        @broker3.should_receive(:usable?).and_return(false)
-        aliases = []
-        res = ha.__send__(:each_usable) { |b| aliases << b.alias }
-        aliases.should == ["b0"]
-        res.size.should == 1
-        res[0].alias.should == "b0"
+        it "should give access to or list #{status} brokers" do
+          ha = RightAMQP::HABrokerClient.new(@serializer, :host => "first, second, third")
+          aliases = []
+          res = ha.__send__(:each, status) { |b| aliases << b.alias }
+          aliases.should == ["b0", "b1", "b2"]
+          res.size.should == 3
+          res[0].alias.should == "b0"
+          res[1].alias.should == "b1"
+          res[2].alias.should == "b2"
+
+          @broker1.should_receive(status_query).and_return(true)
+          @broker2.should_receive(status_query).and_return(false)
+          @broker3.should_receive(status_query).and_return(false)
+          aliases = []
+          res = ha.__send__(:each, status) { |b| aliases << b.alias }
+          aliases.should == ["b0"]
+          res.size.should == 1
+          res[0].alias.should == "b0"
+        end
+
+        it "should give access to each selected #{status} broker" do
+          ha = RightAMQP::HABrokerClient.new(@serializer, :host => "first, second, third")
+          @broker2.should_receive(status_query).and_return(true)
+          @broker3.should_receive(status_query).and_return(false)
+          aliases = []
+          res = ha.__send__(:each, status, [@identity2, @identity3]) { |b| aliases << b.alias }
+          aliases.should == ["b1"]
+          res.size.should == 1
+          res[0].alias.should == "b1"
+        end
       end
 
       it "should give list of unusable brokers" do
@@ -1015,17 +1083,6 @@ describe RightAMQP::HABrokerClient do
         @broker2.should_receive(:usable?).and_return(false)
         @broker3.should_receive(:usable?).and_return(false)
         ha.unusable.should == [@identity2, @identity3]
-      end
-
-      it "should give access to each selected usable broker" do
-        ha = RightAMQP::HABrokerClient.new(@serializer, :host => "first, second, third")
-        @broker2.should_receive(:usable?).and_return(true)
-        @broker3.should_receive(:usable?).and_return(false)
-        aliases = []
-        res = ha.__send__(:each_usable, [@identity2, @identity3]) { |b| aliases << b.alias }
-        aliases.should == ["b1"]
-        res.size.should == 1
-        res[0].alias.should == "b1"
       end
 
       it "should tell whether a broker is connected" do
@@ -1235,9 +1292,66 @@ describe RightAMQP::HABrokerClient do
         ha.__send__(:update_status, @broker, false)
         @broker.should_receive(:status).and_return(:disconnected)
         @broker.should_receive(:connected?).and_return(false)
+        @broker.should_receive(:failed?).and_return(false)
         ha.__send__(:update_status, @broker, true)
         called1.should == 1
         called2.should == 2
+      end
+
+      it "should provide failed connection status callback when all broker connections fail with :any option" do
+        ha = RightAMQP::HABrokerClient.new(@serializer, :host => "first, second")
+        connected = disconnected = failed = 0
+        ha.connection_status(:boundary => :any) do |status|
+          if status == :connected
+            connected += 1
+          elsif status == :disconnected
+            disconnected += 1
+          elsif status == :failed
+            (ha.brokers[0].failed? &&
+             ha.brokers[1].failed?).should be_true
+            failed += 1
+          end
+        end
+        @broker2.should_receive(:failed?).and_return(true)
+        @broker2.should_receive(:connected?).and_return(false)
+        ha.__send__(:update_status, @broker2, true)
+        connected.should == 0
+        disconnected.should == 0
+        failed.should == 0
+        @broker1.should_receive(:failed?).and_return(true)
+        @broker1.should_receive(:connected?).and_return(false)
+        ha.__send__(:update_status, @broker1, true)
+        connected.should == 0
+        disconnected.should == 0
+        failed.should == 1
+      end
+
+      it "should provide failed connection status callback when all broker connections fail with :all option" do
+        ha = RightAMQP::HABrokerClient.new(@serializer, :host => "first, second")
+        connected = disconnected = failed = 0
+        ha.connection_status(:boundary => :all) do |status|
+          if status == :connected
+            connected += 1
+          elsif status == :disconnected
+            disconnected += 1
+          elsif status == :failed
+            (ha.brokers[0].failed? &&
+             ha.brokers[1].failed?).should be_true
+            failed += 1
+          end
+        end
+        @broker2.should_receive(:failed?).and_return(true)
+        @broker2.should_receive(:connected?).and_return(false)
+        ha.__send__(:update_status, @broker2, true)
+        connected.should == 0
+        disconnected.should == 1
+        failed.should == 0
+        @broker1.should_receive(:failed?).and_return(true)
+        @broker1.should_receive(:connected?).and_return(false)
+        ha.__send__(:update_status, @broker1, true)
+        connected.should == 0
+        disconnected.should == 1
+        failed.should == 1
       end
 
       it "should provide failed connection status callback when all brokers fail to connect" do

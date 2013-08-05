@@ -577,6 +577,58 @@ describe RightAMQP::BrokerClient do
 
   end # when declaring
 
+  context "when checking status" do
+
+    before(:each) do
+      @direct = flexmock("direct")
+      @bind = flexmock("bind", :subscribe => true)
+      @queue = flexmock("queue", :bind => @bind, :name => "queue1")
+      @channel.should_receive(:queue).and_return(@queue).by_default
+      @channel.should_receive(:direct).and_return(@direct).by_default
+      flexmock(MQ).should_receive(:new).with(@connection).and_return(@channel).by_default
+      @broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
+      @broker.subscribe({:name => "queue1"}, {:type => :direct, :name => "exchange"}) {|_, _|}
+      @broker.send(:update_status, :ready)
+    end
+
+    it "should return false if client not connected" do
+      @broker.send(:update_status, :disconnected)
+      @broker.queue_status(["queue1"]).should be_false
+    end
+
+    it "should request the status of each queue and pass it to the supplied block" do
+      @queue.should_receive(:status).and_yield(1, 2).once
+      called = 0
+      @broker.queue_status(["queue1"]) do |name, messages, consumers|
+        name.should == "queue1"
+        messages.should == 1
+        consumers.should == 2
+        called += 1
+      end.should be_true
+      called.should == 1
+    end
+
+    it "should not require a block" do
+      @queue.should_receive(:status).once
+      @broker.queue_status(["queue1"]).should be_true
+    end
+
+    it "should log unexpected exceptions and call block with nil status" do
+      @logger.should_receive(:error).with(/Failed checking status of queue/).once
+      @exceptions.should_receive(:track).once
+      @queue.should_receive(:status).and_raise(Exception).once
+      called = 0
+      @broker.queue_status(["queue1"]) do |name, messages, consumers|
+        name.should == "queue1"
+        messages.should be_nil
+        consumers.should be_nil
+        called += 1
+      end.should be_true
+      called.should == 1
+    end
+
+  end # when checking status
+
   context "when publishing" do
 
     before(:each) do
