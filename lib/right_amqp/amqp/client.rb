@@ -56,7 +56,7 @@ module AMQP
       # The 'connected' status callback happens before the handshake is done and if it results in
       # a lot of activity it might prevent EM from being able to call the code handling the
       # incoming handshake packet in a timely fashion causing the broker to close the connection
-      @connection_status.call(:ready) if @connection_status && frame.payload.is_a?(AMQP::Protocol::Connection::Start)
+      @connection_status.call(:ready) if @connection_status && frame.payload.is_a?(AMQP::Protocol::Connection::OpenOk)
     end
   end
 
