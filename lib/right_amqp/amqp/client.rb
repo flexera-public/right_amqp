@@ -56,7 +56,7 @@ module AMQP
       # The 'connected' status callback happens before the handshake is done and if it results in
       # a lot of activity it might prevent EM from being able to call the code handling the
       # incoming handshake packet in a timely fashion causing the broker to close the connection
-      @connection_status.call(:ready) if @connection_status && frame.payload.is_a?(AMQP::Protocol::Connection::Start)
+      @connection_status.call(:ready) if @connection_status && frame.payload.is_a?(AMQP::Protocol::Connection::OpenOk)
     end
   end
 
@@ -99,6 +99,7 @@ module AMQP
       end
 
       @connected = true
+      logger.debug("[amqp] Connected to broker #{@settings[:identity]}")
       @connection_status.call(:connected) if @connection_status
 
       @buf = Buffer.new
@@ -164,6 +165,7 @@ module AMQP
     def unbind
       log 'disconnected'
       @connected = false
+      logger.debug("[amqp] Disconnected from broker #{@settings[:identity]}")
       EM.next_tick{ @on_disconnect.call }
     end
 
@@ -273,7 +275,7 @@ module AMQP
       end
 
       log 'reconnecting'
-      logger.info("[amqp] Attempting to reconnect to #{@settings[:identity]}")
+      logger.info("[amqp] Attempting to reconnect to broker #{@settings[:identity]}")
       EM.reconnect(@settings[:host], @settings[:port], self)
     rescue Exception => e
       logger.exception("[amqp] Failed to reconnect", e, :trace)
