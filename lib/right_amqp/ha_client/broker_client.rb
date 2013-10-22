@@ -295,7 +295,7 @@ module RightAMQP
     # true:: Always return true
     def unsubscribe(queue_names, &block)
       if usable?
-        @queues.each do |q|
+        @queues.reject! do |q|
           if queue_names.include?(q.name)
             begin
               logger.info("[stop] Unsubscribing queue #{q.name} on broker #{@alias}")
@@ -305,6 +305,7 @@ module RightAMQP
               @exception_stats.track("unsubscribe", e)
               block.call if block
             end
+            true
           end
         end
       end

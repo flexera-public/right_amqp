@@ -491,6 +491,16 @@ describe RightAMQP::BrokerClient do
       broker.unsubscribe(["queue1"])
     end
 
+    it "should remove unsubscribed queue from list of queues" do
+      @queue.should_receive(:unsubscribe).once
+      broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
+      broker.subscribe({:name => "queue1"}, {:type => :direct, :name => "exchange"}) {|_, _|}
+      broker.queues.size.should == 1
+      broker.queues[0].name.should == "queue1"
+      broker.unsubscribe(["queue1"])
+      broker.queues.should be_empty
+    end
+
     it "should ignore unsubscribe if queue unknown" do
       @queue.should_receive(:unsubscribe).never
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
