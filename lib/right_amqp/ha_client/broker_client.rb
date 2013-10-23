@@ -294,7 +294,7 @@ module RightAMQP
     # === Return
     # true:: Always return true
     def unsubscribe(queue_names, &block)
-      if usable?
+      unless failed?
         @queues.reject! do |q|
           if queue_names.include?(q.name)
             begin
@@ -306,6 +306,8 @@ module RightAMQP
               block.call if block
             end
             true
+          else
+            false
           end
         end
       end

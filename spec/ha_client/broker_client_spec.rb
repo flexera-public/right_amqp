@@ -517,11 +517,12 @@ describe RightAMQP::BrokerClient do
       called.should == 1
     end
 
-    it "should ignore the request if client not usable" do
+    it "should ignore the request if client is failed" do
       @queue.should_receive(:unsubscribe).and_yield.never
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
       broker.subscribe({:name => "queue1"}, {:type => :direct, :name => "exchange"}) {|_, _|}
-      broker.__send__(:update_status, :disconnected)
+      @logger.should_receive(:error).with(/Failed to connect to broker b0/).once
+      broker.__send__(:update_status, :failed)
       broker.unsubscribe(["queue1"])
     end
 
