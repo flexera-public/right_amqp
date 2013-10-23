@@ -24,8 +24,8 @@ require 'rubygems'
 
 Gem::Specification.new do |spec|
   spec.name      = 'right_amqp'
-  spec.version   = '0.8.0'
-  spec.date      = '2013-10-08'
+  spec.version   = '0.8.1'
+  spec.date      = '2013-10-23'
   spec.authors   = ['Lee Kirchhoff']
   spec.email     = 'lee@rightscale.com'
   spec.homepage  = 'https://github.com/rightscale/right_amqp'
