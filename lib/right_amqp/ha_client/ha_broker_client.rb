@@ -171,19 +171,24 @@ module RightAMQP
       raise NoUserData.new("User data is missing") if user_data.nil? || user_data.empty?
       hosts = ""
       ports = nil
+      parsed = {}
       user_data.split("&").each do |data|
         name, value = data.split("=")
-        if name == "RS_rn_url"
-          h = value.split("@").last.split("/").first
-          # Translate host name used by very old agents using only one broker
-          h = "broker1-1.rightscale.com" if h == "broker.rightscale.com"
-          hosts = h + hosts
-        end
-        if name == "RS_rn_host"
-          hosts << value
-        end
-        if name == "RS_rn_port"
-          ports = value
+        # Guard against repeats
+        unless parsed[name]
+          if name == "RS_rn_url"
+            h = value.split("@").last.split("/").first
+            # Translate host name used by very old agents using only one broker
+            h = "broker1-1.rightscale.com" if h == "broker.rightscale.com"
+            hosts = h + hosts
+          end
+          if name == "RS_rn_host"
+            hosts << value
+          end
+          if name == "RS_rn_port"
+            ports = value
+          end
+          parsed[name] = true
         end
       end
       raise NoBrokerHosts.new("No brokers found in user data") if hosts.empty?

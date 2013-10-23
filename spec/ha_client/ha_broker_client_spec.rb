@@ -239,6 +239,12 @@ describe RightAMQP::HABrokerClient do
         ["broker1-1.rightscale.com", nil]
     end
 
+    it "should ignore repeated variables in the user data" do
+      user_data = "RS_rn_url=amqp://49c7a840eb:5c9c0823cb@broker4-2.rightscale.com/right_net&RS_rn_id=6067794001&RS_server=my.rightscale.com&RS_sketchy=sketchy12-13.rightscale.com&RS_rn_host=:1,broker4-1.rightscale.com:0&RS_rn_url=amqp://49c7a840eb:5c9c0823cb@broker4-1.rightscale.com/right_net&RS_rn_id=6067770001&RS_server=my.rightscale.com&RS_sketchy=sketchy12-13.rightscale.com&RS_rn_host=:0,broker4-2.rightscale.com:1"
+      RightAMQP::HABrokerClient.parse_user_data(user_data).should ==
+        ["broker4-2.rightscale.com:1,broker4-1.rightscale.com:0", nil]
+    end
+
   end # when parsing user_data
 
   context "when addressing" do
