@@ -100,7 +100,7 @@ describe RightAMQP::BrokerClient do
       @connection.should_receive(:close).once
       @logger.should_receive(:info).once
       @logger.should_receive(:error).with(/Failed connecting/).once
-      flexmock(MQ).should_receive(:new).with(@connection).and_raise(Exception)
+      flexmock(MQ).should_receive(:new).with(@connection).and_raise(StandardError)
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
       broker.summary.should == {:alias => "b0", :identity => @identity, :status => :failed,
                                 :disconnects => 0, :failures => 1, :retries => 0}
@@ -443,7 +443,7 @@ describe RightAMQP::BrokerClient do
 
     it "should log an error if exception prevents normal logging and should then return nil" do
       @logger.should_receive(:error).with(/Failed unserializing message from queue/).once
-      @serializer.should_receive(:load).with(@message).and_raise(Exception).once
+      @serializer.should_receive(:load).with(@message).and_raise(StandardError).once
       @exceptions.should_receive(:track).once
       @non_deliveries.should_receive(:update).once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
@@ -452,7 +452,7 @@ describe RightAMQP::BrokerClient do
 
     it "should make callback when there is a receive failure" do
       @logger.should_receive(:error).with(/Failed unserializing message from queue/).once
-      @serializer.should_receive(:load).with(@message).and_raise(Exception).once
+      @serializer.should_receive(:load).with(@message).and_raise(StandardError).once
       @exceptions.should_receive(:track).once
       @non_deliveries.should_receive(:update).once
       called = 0
@@ -528,7 +528,7 @@ describe RightAMQP::BrokerClient do
 
     it "should log an error if unsubscribe raises an exception and activate block if provided" do
       @logger.should_receive(:error).with(/Failed unsubscribing/).once
-      @queue.should_receive(:unsubscribe).and_raise(Exception).once
+      @queue.should_receive(:unsubscribe).and_raise(StandardError).once
       @exceptions.should_receive(:track).once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
       broker.subscribe({:name => "queue1"}, {:type => :direct, :name => "exchange"}) {|_, _|}
@@ -581,7 +581,7 @@ describe RightAMQP::BrokerClient do
       @logger.should_receive(:info).with(/Declaring/).once
       @logger.should_receive(:error).with(/Failed declaring/).once
       @exceptions.should_receive(:track).once
-      @channel.should_receive(:queue).and_raise(Exception).once
+      @channel.should_receive(:queue).and_raise(StandardError).once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
       broker.declare(:queue, "q").should be_false
     end
@@ -627,7 +627,7 @@ describe RightAMQP::BrokerClient do
     it "should log unexpected exceptions and call block with nil status" do
       @logger.should_receive(:error).with(/Failed checking status of queue/).once
       @exceptions.should_receive(:track).once
-      @queue.should_receive(:status).and_raise(Exception).once
+      @queue.should_receive(:status).and_raise(StandardError).once
       called = 0
       @broker.queue_status(["queue1"]) do |name, messages, consumers|
         name.should == "queue1"
@@ -678,7 +678,7 @@ describe RightAMQP::BrokerClient do
       @logger.should_receive(:error).with(/Failed publishing/).once
       @exceptions.should_receive(:track).once
       @non_deliveries.should_receive(:update).once
-      @channel.should_receive(:direct).and_raise(Exception)
+      @channel.should_receive(:direct).and_raise(StandardError)
       @direct.should_receive(:publish).with(@message, {}).never
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
       broker.__send__(:update_status, :ready)
@@ -874,7 +874,7 @@ describe RightAMQP::BrokerClient do
     it "should log an error and return false if the delete fails" do
       @logger.should_receive(:error).with(/Failed deleting queue/).once
       @exceptions.should_receive(:track).once
-      @queue.should_receive(:delete).and_raise(Exception)
+      @queue.should_receive(:delete).and_raise(StandardError)
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
       broker.subscribe({:name => "queue1"}, {:type => :direct, :name => "exchange"}) {|_, _|}
       broker.queues.should == [@queue]
@@ -1060,7 +1060,7 @@ describe RightAMQP::BrokerClient do
     it "should log an error if closing connection fails but still set status to :closed" do
       @logger.should_receive(:error).with(/Failed to close broker b0/).once
       @exceptions.should_receive(:track).once
-      @connection.should_receive(:close).and_raise(Exception)
+      @connection.should_receive(:close).and_raise(StandardError)
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
       broker.close
       broker.status.should == :closed

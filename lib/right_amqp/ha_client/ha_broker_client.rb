@@ -28,9 +28,9 @@ module RightAMQP
 
     include RightSupport::Log::Mixin
 
-    class NoUserData < Exception; end
-    class NoBrokerHosts < Exception; end
-    class NoConnectedBrokers < Exception; end
+    class NoUserData < StandardError; end
+    class NoBrokerHosts < StandardError; end
+    class NoConnectedBrokers < StandardError; end
 
     # Message publishing context
     class Context
@@ -762,7 +762,7 @@ module RightAMQP
         @brokers.each do |b|
           begin
             b.close(propagate = false) { handler.completed_one }
-          rescue Exception => e
+          rescue StandardError => e
             handler.completed_one
             logger.exception("Failed to close broker #{b.alias}", e, :trace)
             @exception_stats.track("close", e)

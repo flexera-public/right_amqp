@@ -1449,7 +1449,7 @@ describe RightAMQP::HABrokerClient do
       it "should close all broker connections even if encounter an exception" do
         @logger.should_receive(:error).with(/Failed to close/).once
         @broker1.should_receive(:close).and_return(true).and_yield.once
-        @broker2.should_receive(:close).and_raise(Exception).once
+        @broker2.should_receive(:close).and_raise(StandardError).once
         @broker3.should_receive(:close).and_return(true).and_yield.once
         ha = RightAMQP::HABrokerClient.new(@serializer, :host => "first, second, third")
         called = 0

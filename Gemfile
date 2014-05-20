@@ -1,13 +1,12 @@
-source :gemcutter
-source 'http://gems.github.com'
 source 'http://s3.amazonaws.com/rightscale_rightlink_gems_dev'
+source "https://rubygems.org"
 
 gemspec
 
 # Lock eventmachine to a published and well-tested version to avoid picking up
 # proprietary builds that happen to be installed locally
 group :custom do
-  gem "eventmachine", "1.0.0.3"
+  gem "eventmachine", "1.0.0.9"
 end
 
 group :development do

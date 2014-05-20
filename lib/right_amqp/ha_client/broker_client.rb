@@ -264,10 +264,7 @@ module RightAMQP
             else
               receive(queue[:name], header, message, options, &block)
             end
-          rescue SystemExit
-            # Do not want to track exit exception that could occur during serialization
-            raise
-          rescue Exception => e
+          rescue StandardError => e
             header.ack if options[:ack]
             logger.exception("Failed setting up to receive message from queue #{queue.inspect} " +
                              "on broker #{@alias}", e, :trace)
@@ -275,7 +272,7 @@ module RightAMQP
             @non_delivery_stats.update("receive failure")
           end
         end
-      rescue Exception => e
+      rescue StandardError => e
         logger.exception("Failed subscribing queue #{queue.inspect}#{to_exchange} on broker #{@alias}", e, :trace)
         @exception_stats.track("subscribe", e)
         false
@@ -300,7 +297,7 @@ module RightAMQP
             begin
               logger.info("[stop] Unsubscribing queue #{q.name} on broker #{@alias}")
               q.unsubscribe { block.call if block }
-            rescue Exception => e
+            rescue StandardError => e
               logger.exception("Failed unsubscribing queue #{q.name} on broker #{@alias}", e, :trace)
               @exception_stats.track("unsubscribe", e)
               block.call if block
@@ -330,7 +327,7 @@ module RightAMQP
         delete_amqp_resources(:queue, name)
         @channel.__send__(type, name, options)
         true
-      rescue Exception => e
+      rescue StandardError => e
         logger.exception("Failed declaring #{type.to_s} #{name} on broker #{@alias}", e, :trace)
         @exception_stats.track("declare", e)
         false
@@ -359,7 +356,7 @@ module RightAMQP
         if queue_names.include?(q.name)
           begin
             q.status { |messages, consumers| block.call(q.name, messages, consumers) if block }
-          rescue Exception => e
+          rescue StandardError => e
             logger.exception("Failed checking status of queue #{q.name} on broker #{@alias}", e, :trace)
             @exception_stats.track("queue_status", e)
             block.call(q.name, nil, nil) if block
@@ -412,7 +409,7 @@ module RightAMQP
         delete_amqp_resources(exchange[:type], exchange[:name]) if exchange_options[:declare]
         @channel.__send__(exchange[:type], exchange[:name], exchange_options).publish(message, options)
         true
-      rescue Exception => e
+      rescue StandardError => e
         logger.exception("Failed publishing to exchange #{exchange.inspect} on broker #{@alias}", e, :trace)
         @exception_stats.track("publish", e)
         @non_delivery_stats.update("publish failure")
@@ -444,7 +441,7 @@ module RightAMQP
             @channel.queue(name, options).delete
             deleted = true
           end
-        rescue Exception => e
+        rescue StandardError => e
           logger.exception("Failed deleting queue #{name.inspect} on broker #{@alias}", e, :trace)
           @exception_stats.track("delete", e)
         end
@@ -487,7 +484,7 @@ module RightAMQP
             @status = final_status
             yield if block_given?
           end
-        rescue Exception => e
+        rescue StandardError => e
           logger.exception("Failed to close broker #{@alias}", e, :trace)
           @exception_stats.track("close", e)
           @status = final_status
@@ -613,7 +610,7 @@ module RightAMQP
         @channel.__send__(:connection).connection_status { |status| update_status(status) }
         @channel.prefetch(@options[:prefetch]) if @options[:prefetch]
         @channel.return_message { |header, message| handle_return(header, message) }
-      rescue Exception => e
+      rescue StandardError => e
         @status = :failed
         @failure_stats.update
         logger.exception("Failed connecting to broker #{@alias}", e, :trace)
@@ -659,10 +656,7 @@ module RightAMQP
           header.ack
         end
         true
-      rescue SystemExit
-        # Do not want to track exit exception that could occur during serialization
-        raise
-      rescue Exception => e
+      rescue StandardError => e
         header.ack if options[:ack]
         logger.exception("Failed receiving message from queue #{queue.inspect} on broker #{@alias}", e, :trace)
         @exception_stats.track("receive", e)
@@ -701,10 +695,7 @@ module RightAMQP
           logger.error("Received invalid #{category}packet type from queue #{queue} on broker #{@alias}: #{packet.class}\n" + caller.join("\n"))
           nil
         end
-      rescue SystemExit
-        # Do not want to track exit exception that could occur during serialization
-        raise
-      rescue Exception => e
+      rescue StandardError => e
         # TODO Taking advantage of Serializer knowledge here even though out of scope
         trace = e.class.name =~ /SerializationError/ ? :caller : :trace
         logger.exception("Failed unserializing message from queue #{queue.inspect} on broker #{@alias}", e, trace)
