@@ -131,7 +131,12 @@ module AMQP
             begin
               if connected?
                 now = Time.now
-                if @last_data_received && @last_data_received < (now - (@settings[:heartbeat] * timeout_factor))
+                if @last_data_received.nil?
+                  # This is something of an anomaly; not clear how this condition is reached
+                  logger.info("[amqp] Reconnecting to broker #{@settings[:identity]} due to heartbeat timeout " +
+                              "with no data having been received")
+                  close_connection # which results in an unbind and an automatic reconnect
+                elsif @last_data_received < (now - (@settings[:heartbeat] * timeout_factor))
                   data_received = (now - @last_data_received).to_i
                   heartbeat_received = (now - @last_heartbeat_received).to_i if @last_heartbeat_received
                   heartbeat_sent = (now - @last_heartbeat_sent).to_i if @last_heartbeat_sent
