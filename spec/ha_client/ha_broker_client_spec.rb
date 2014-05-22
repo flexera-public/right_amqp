@@ -1133,6 +1133,18 @@ describe RightAMQP::HABrokerClient do
                             "returns" => nil}
       end
 
+      it "should omit exceptions from client statistics if accumulated usin :exception_stats option" do
+        stats = RightSupport::Stats::Exceptions.new
+        ha = RightAMQP::HABrokerClient.new(@serializer, :host => "first, second, third", :exception_stats => stats)
+        @broker1.should_receive(:stats).and_return("stats1")
+        @broker2.should_receive(:stats).and_return("stats2")
+        @broker3.should_receive(:stats).and_return("stats3")
+        ha.stats.should == {"brokers" => ["stats1", "stats2", "stats3"],
+                            "heartbeat" => nil,
+                            "non-deliveries" => nil,
+                            "returns" => nil}
+      end
+
       it "should log broker client status update if there is a change" do
         @logger.should_receive(:info).with(/Broker b0 is now connected/).once
         ha = RightAMQP::HABrokerClient.new(@serializer, :host => "first, second, third")

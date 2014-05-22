@@ -122,6 +122,8 @@ module RightAMQP
     #     if the agent crashes. Value 0 means unlimited prefetch.
     #   :order(Symbol):: Broker selection order when publishing a message: :random or :priority,
     #     defaults to :priority, value can be overridden on publish call
+    #   :exception_stats(RightSupport::Stats::Exceptions):: Exception statistics container to be used
+    #     instead of internally created one
     #   :exception_callback(Proc):: Callback activated on exception events with parameters
     #     exception(Exception):: Exception
     #     message(Packet):: Message being processed
@@ -862,11 +864,11 @@ module RightAMQP
     def stats(reset = false)
       stats = {
         "brokers"        => @brokers.map { |b| b.stats },
-        "exceptions"     => @exception_stats.stats,
         "heartbeat"      => @options[:heartbeat],
         "non-deliveries" => @non_delivery_stats.all,
         "returns"        => @return_stats.all
       }
+      stats["exceptions"] = @exception_stats.stats unless @options[:exception_stats]
       reset_stats if reset
       stats
     end
@@ -880,7 +882,7 @@ module RightAMQP
     def reset_stats
       @return_stats = RightSupport::Stats::Activity.new
       @non_delivery_stats = RightSupport::Stats::Activity.new
-      @exception_stats = RightSupport::Stats::Exceptions.new(self, @options[:exception_callback])
+      @exception_stats = @options[:exception_stats] || RightSupport::Stats::Exceptions.new(self, @options[:exception_callback])
       true
     end
 
