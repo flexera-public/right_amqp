@@ -699,7 +699,7 @@ module RightAMQP
         # TODO Taking advantage of Serializer knowledge here even though out of scope
         trace = e.class.name =~ /SerializationError/ ? :caller : :trace
         logger.exception("Failed unserializing message from queue #{queue.inspect} on broker #{@alias}", e, trace)
-        @exception_stats.track("receive", e)
+        @exception_stats.track("receive", e) if e.to_s !~ /MissingCertificate/
         @options[:exception_on_receive_callback].call(message, e) if @options[:exception_on_receive_callback]
         @non_delivery_stats.update("receive failure")
         nil
