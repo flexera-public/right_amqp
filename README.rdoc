@@ -20,7 +20,7 @@ documentation.
 Also use the built-in issues tracker (https://github.com/rightscale/right_amqp/issues)
 to report issues.
 
-Maintained by the RightScale Teal Team
+Maintained by the RightScale Cornsilk Team
 
 == Interface
 
