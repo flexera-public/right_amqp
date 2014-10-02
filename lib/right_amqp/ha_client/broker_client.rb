@@ -269,7 +269,7 @@ module RightAMQP
             logger.exception("Failed setting up to receive message from queue #{queue.inspect} " +
                              "on broker #{@alias}", e, :trace)
             @exception_stats.track("receive", e)
-            @non_delivery_stats.update("receive failure", e.class.name.sub(/^.*::/, ""))
+            @non_delivery_stats.update("receive failure", exception_name(e))
           end
         end
       rescue StandardError => e
@@ -412,7 +412,7 @@ module RightAMQP
       rescue StandardError => e
         logger.exception("Failed publishing to exchange #{exchange.inspect} on broker #{@alias}", e, :trace)
         @exception_stats.track("publish", e)
-        @non_delivery_stats.update("publish failure", e.class.name.sub(/^.*::/, ""))
+        @non_delivery_stats.update("publish failure", exception_name(e))
         false
       end
     end
@@ -660,7 +660,7 @@ module RightAMQP
         header.ack if options[:ack]
         logger.exception("Failed receiving message from queue #{queue.inspect} on broker #{@alias}", e, :trace)
         @exception_stats.track("receive", e)
-        @non_delivery_stats.update("receive failure", e.class.name.sub(/^.*::/, ""))
+        @non_delivery_stats.update("receive failure", exception_name(e))
       end
     end
 
@@ -705,7 +705,7 @@ module RightAMQP
         logger.exception("Failed unserializing message from queue #{queue.inspect} on broker #{@alias}", e, trace)
         @exception_stats.track("receive", e) if track
         @options[:exception_on_receive_callback].call(message, e) if @options[:exception_on_receive_callback]
-        @non_delivery_stats.update("receive failure", e.class.name.sub(/^.*::/, ""))
+        @non_delivery_stats.update("receive failure", exception_name(e))
         nil
       end
     end
@@ -734,6 +734,15 @@ module RightAMQP
         @failure_stats.update
       end
       true
+    end
+
+    # Extract name of exception
+    #
+    # @param [exception] exception
+    #
+    # @return [String] name of exception
+    def exception_name(exception)
+      exception.class.name.sub(/^.*::/, "")
     end
 
     # Handle message returned by broker because it could not deliver it
