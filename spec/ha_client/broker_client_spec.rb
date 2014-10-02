@@ -26,6 +26,13 @@ require File.expand_path(File.join(File.dirname(__FILE__), '..', '..', 'lib', 'r
 class RequestMock; end
 class ResultMock; end
 
+module RightScale
+  class SerializationError < StandardError; end
+  class Exceptions
+    class ConnectivityFailure < StandardError; end
+  end
+end
+
 describe RightAMQP::BrokerClient do
 
   include FlexMock::ArgumentTypes
@@ -271,16 +278,17 @@ describe RightAMQP::BrokerClient do
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
       broker.__send__(:update_status, :ready)
       result = broker.subscribe({:name => "queue"}, {:type => :direct, :name => "exchange"},
-                                :ack => true, RequestMock => nil) {|b, p| raise Exception}
+                                :ack => true, RequestMock => nil) {|b, p| raise StandardError}
       result.should be_false
     end
 
     it "should log an error if a subscribe fails" do
       @logger.should_receive(:info).with(/Connecting/).once
+      @logger.should_receive(:info).with(/Subscribing/).once
       @logger.should_receive(:info).with(/RECV/).never
       @logger.should_receive(:error).with(/Failed subscribing/).once
       @exceptions.should_receive(:track).once
-      @bind.should_receive(:subscribe).and_raise(Exception)
+      @bind.should_receive(:subscribe).and_raise(StandardError)
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
       broker.__send__(:update_status, :ready)
       result = broker.subscribe({:name => "queue"}, {:type => :direct, :name => "exchange"}) {|_, _|}
@@ -441,13 +449,46 @@ describe RightAMQP::BrokerClient do
       broker.__send__(:unserialize, "queue", @message, RequestMock => nil, :no_log => true)
     end
 
-    it "should log an error if exception prevents normal logging and should then return nil" do
+    it "should log an error if exception prevents unserialization and should then return nil" do
       @logger.should_receive(:error).with(/Failed unserializing message from queue/).once
       @serializer.should_receive(:load).with(@message).and_raise(StandardError).once
       @exceptions.should_receive(:track).once
       @non_deliveries.should_receive(:update).once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
       broker.__send__(:unserialize, "queue", @message).should be_nil
+    end
+
+    it "should use lesser trace level for SerializationError exception" do
+      @serializer.should_receive(:load).with(@message).and_raise(RightScale::SerializationError, "failed").once
+      @exceptions.should_receive(:track).once
+      @non_deliveries.should_receive(:update).once
+      broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
+      logger = flexmock(broker.logger)
+      logger.should_receive(:exception).with(/Failed unserializing message from queue/, RightScale::SerializationError, :caller).once
+      broker.__send__(:unserialize, "queue", @message).should be_nil
+    end
+
+    it "should use lesser trace level for ConnectivityFailure exception and not track" do
+      @serializer.should_receive(:load).with(@message).and_raise(RightScale::Exceptions::ConnectivityFailure, "failed").once
+      @exceptions.should_receive(:track).never
+      @non_deliveries.should_receive(:update).once
+      broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
+      logger = flexmock(broker.logger)
+      logger.should_receive(:exception).with(/Failed unserializing message from queue/, RightScale::Exceptions::ConnectivityFailure, :caller).once
+      broker.__send__(:unserialize, "queue", @message).should be_nil
+    end
+
+    ["MissingCertificate", "MissingPrivateKey", "InvalidSignature"].each do |name|
+      it "should not track SerializationError containing #{name} exceptions" do
+        e = RightScale::SerializationError.new(name)
+        @serializer.should_receive(:load).with(@message).and_raise(e).once
+        @exceptions.should_receive(:track).never
+        @non_deliveries.should_receive(:update).once
+        broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
+        logger = flexmock(broker.logger)
+        logger.should_receive(:exception).with(/Failed unserializing message from queue/, e, :caller).once
+        broker.__send__(:unserialize, "queue", @message).should be_nil
+      end
     end
 
     it "should make callback when there is a receive failure" do
@@ -834,7 +875,7 @@ describe RightAMQP::BrokerClient do
       @logger.should_receive(:debug).with("RETURN b0 for exchange because NO_CONSUMERS")
       @logger.should_receive(:error).with(/Failed return/).once
       @exceptions.should_receive(:track).once
-      @options = {:return_message_callback => lambda { |i, t, r, m| raise Exception } }
+      @options = {:return_message_callback => lambda { |i, t, r, m| raise StandardError } }
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
       broker.__send__(:handle_return, @header, @message).should be_true
     end
@@ -881,7 +922,7 @@ describe RightAMQP::BrokerClient do
       broker.delete("queue1").should be_false
     end
 
-  end # when deleteing
+  end # when deleting
 
   context "when monitoring" do
 

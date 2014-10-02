@@ -44,11 +44,13 @@ module RightAMQP
     def setup_logger
       @logger = flexmock("logger")
       @logger.should_receive(:level).and_return(:info).by_default
-      @logger.should_receive(:exception).by_default.and_return { |m| raise m }
       @logger.should_receive(:error).by_default.and_return { |m| raise m }
       @logger.should_receive(:warn).by_default.and_return { |m| raise m }
       @logger.should_receive(:info).by_default
       @logger.should_receive(:debug).by_default
+      # Note that the following puts the mock logger inside the default Decorator
+      # so the only way to mock the :exception interface is to flexmock the
+      # logger if the constructed class that uses RightSupport::Log::Mixin
       RightSupport::Log::Mixin.default_logger = @logger
     end
 

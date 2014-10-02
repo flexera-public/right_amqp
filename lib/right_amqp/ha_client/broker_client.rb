@@ -252,14 +252,14 @@ module RightAMQP
         if exchange
           x = @channel.__send__(exchange[:type], exchange[:name], exchange_options)
           binding = q.bind(x, options[:key] ? {:key => options[:key]} : {})
-          if exchange2 = options[:exchange2]
+          if (exchange2 = options[:exchange2])
             q.bind(@channel.__send__(exchange2[:type], exchange2[:name], exchange2[:options] || {}))
           end
           q = binding
         end
         q.subscribe(options[:ack] ? {:ack => true} : {}) do |header, message|
           begin
-            if pool = (options[:fiber_pool] || @options[:fiber_pool])
+            if (pool = (options[:fiber_pool] || @options[:fiber_pool]))
               pool.spawn { receive(queue[:name], header, message, options, &block) }
             else
               receive(queue[:name], header, message, options, &block)
@@ -269,7 +269,7 @@ module RightAMQP
             logger.exception("Failed setting up to receive message from queue #{queue.inspect} " +
                              "on broker #{@alias}", e, :trace)
             @exception_stats.track("receive", e)
-            @non_delivery_stats.update("receive failure")
+            @non_delivery_stats.update("receive failure", e.class.name.sub(/^.*::/, ""))
           end
         end
       rescue StandardError => e
@@ -412,11 +412,11 @@ module RightAMQP
       rescue StandardError => e
         logger.exception("Failed publishing to exchange #{exchange.inspect} on broker #{@alias}", e, :trace)
         @exception_stats.track("publish", e)
-        @non_delivery_stats.update("publish failure")
+        @non_delivery_stats.update("publish failure", e.class.name.sub(/^.*::/, ""))
         false
       end
     end
-
+3
     # Delete queue
     #
     # === Parameters
@@ -649,7 +649,7 @@ module RightAMQP
           # This happens as part of connecting an instance agent to a broker prior to version 13
           header.ack if options[:ack]
           logger.debug("RECV #{@alias} nil message ignored")
-        elsif packet = unserialize(queue, message, options)
+        elsif (packet = unserialize(queue, message, options))
           execute_callback(block, @identity, packet, header)
         elsif options[:ack]
           # Need to ack empty packet since no callback is being made
@@ -660,7 +660,7 @@ module RightAMQP
         header.ack if options[:ack]
         logger.exception("Failed receiving message from queue #{queue.inspect} on broker #{@alias}", e, :trace)
         @exception_stats.track("receive", e)
-        @non_delivery_stats.update("receive failure")
+        @non_delivery_stats.update("receive failure", e.class.name.sub(/^.*::/, ""))
       end
     end
 
@@ -697,11 +697,15 @@ module RightAMQP
         end
       rescue StandardError => e
         # TODO Taking advantage of Serializer knowledge here even though out of scope
-        trace = e.class.name =~ /SerializationError/ ? :caller : :trace
+        trace, track = case e.class.name.sub(/^.*::/, "")
+        when "SerializationError"  then [:caller, e.to_s !~ /MissingCertificate|MissingPrivateKey|InvalidSignature/]
+        when "ConnectivityFailure" then [:caller, false]
+        else                            [:trace, true]
+        end
         logger.exception("Failed unserializing message from queue #{queue.inspect} on broker #{@alias}", e, trace)
-        @exception_stats.track("receive", e) if e.to_s !~ /MissingCertificate/
+        @exception_stats.track("receive", e) if track
         @options[:exception_on_receive_callback].call(message, e) if @options[:exception_on_receive_callback]
-        @non_delivery_stats.update("receive failure")
+        @non_delivery_stats.update("receive failure", e.class.name.sub(/^.*::/, ""))
         nil
       end
     end
