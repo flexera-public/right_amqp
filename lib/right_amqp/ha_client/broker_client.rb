@@ -269,7 +269,7 @@ module RightAMQP
             logger.exception("Failed setting up to receive message from queue #{queue.inspect} " +
                              "on broker #{@alias}", e, :trace)
             @exception_stats.track("receive", e)
-            @non_delivery_stats.update("receive failure", exception_name(e))
+            update_non_delivery_stats("receive failure", e)
           end
         end
       rescue StandardError => e
@@ -412,7 +412,7 @@ module RightAMQP
       rescue StandardError => e
         logger.exception("Failed publishing to exchange #{exchange.inspect} on broker #{@alias}", e, :trace)
         @exception_stats.track("publish", e)
-        @non_delivery_stats.update("publish failure", exception_name(e))
+        update_non_delivery_stats("publish failure", e)
         false
       end
     end
@@ -660,7 +660,7 @@ module RightAMQP
         header.ack if options[:ack]
         logger.exception("Failed receiving message from queue #{queue.inspect} on broker #{@alias}", e, :trace)
         @exception_stats.track("receive", e)
-        @non_delivery_stats.update("receive failure", exception_name(e))
+        update_non_delivery_stats("receive failure", e)
       end
     end
 
@@ -705,7 +705,7 @@ module RightAMQP
         logger.exception("Failed unserializing message from queue #{queue.inspect} on broker #{@alias}", e, trace)
         @exception_stats.track("receive", e) if track
         @options[:exception_on_receive_callback].call(message, e) if @options[:exception_on_receive_callback]
-        @non_delivery_stats.update("receive failure", exception_name(e))
+        update_non_delivery_stats("receive failure", e)
         nil
       end
     end
@@ -736,13 +736,17 @@ module RightAMQP
       true
     end
 
-    # Extract name of exception
+    # Update non-delivery stats
     #
-    # @param [exception] exception
+    # @param [String] type of non-delivery
+    # @param [Exception] exception associated with non-delivery
     #
-    # @return [String] name of exception
-    def exception_name(exception)
-      exception.class.name.sub(/^.*::/, "")
+    # @return [TrueClass] always true
+    def update_non_delivery_stats(type, exception)
+      update = type
+      update << " - #{exception.class.name.sub(/^.*::/, "")}"
+      @non_delivery_stats.update(update)
+      true
     end
 
     # Handle message returned by broker because it could not deliver it

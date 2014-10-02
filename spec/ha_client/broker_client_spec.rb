@@ -41,7 +41,7 @@ describe RightAMQP::BrokerClient do
   before(:each) do
     setup_logger
     @message = "message"
-    @packet = flexmock("packet", :class => RequestMock, :to_s => true, :version => [12, 12]).by_default
+    @packet = flexmock("packet", :class => RequestMock, :to_s => "packet", :version => [12, 12]).by_default
     @serializer = flexmock("serializer")
     @serializer.should_receive(:dump).and_return(@message).by_default
     @serializer.should_receive(:load).with(@message).and_return(@packet).by_default
@@ -269,17 +269,18 @@ describe RightAMQP::BrokerClient do
     it "should receive message and log exception if subscribe block fails and then ack if option set" do
       @logger.should_receive(:info).with(/Connecting/).once
       @logger.should_receive(:info).with(/Subscribing/).once
+      @logger.should_receive(:info).with(/RECV/).once
       @logger.should_receive(:error).with(/Failed receiving message/).once
       @exceptions.should_receive(:track).once
-      @non_deliveries.should_receive(:update).once
+      @non_deliveries.should_receive(:update).with("receive failure - RuntimeError").once
       @serializer.should_receive(:load).with(@message).and_return(@packet).once
       @header.should_receive(:ack).once
       @bind.should_receive(:subscribe).and_yield(@header, @message).once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
       broker.__send__(:update_status, :ready)
       result = broker.subscribe({:name => "queue"}, {:type => :direct, :name => "exchange"},
-                                :ack => true, RequestMock => nil) {|b, p| raise StandardError}
-      result.should be_false
+                                :ack => true, RequestMock => nil) {|b, p| raise RuntimeError}
+      result.should be_true
     end
 
     it "should log an error if a subscribe fails" do
