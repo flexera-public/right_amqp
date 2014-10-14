@@ -1,3 +1,5 @@
+"master" branch: {<img src="https://travis-ci.org/rightscale/right_amqp.svg?branch=master" alt="Build Status" />}[https://travis-ci.org/rightscale/right_amqp]
+
 = RightAMQP
 
 = DESCRIPTION

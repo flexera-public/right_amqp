@@ -6,3 +6,7 @@ pkg/*
 doc/rdocs/*
 .DS_Store
 nbproject/*
+
+# Code metrics
+measurement
+coverage

@@ -23,8 +23,9 @@
 require 'rubygems'
 require 'bundler/setup'
 
-require 'flexmock'
 require 'rspec'
+require 'flexmock'
+require 'simplecov'
 
 RSpec.configure do |c|
   c.mock_with(:flexmock)

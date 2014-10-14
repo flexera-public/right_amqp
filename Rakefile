@@ -25,11 +25,19 @@ require 'rubygems'
 require 'bundler/setup'
 
 require 'rake'
-require 'rdoc/task'
 require 'rubygems/package_task'
 require 'rake/clean'
 require 'rspec/core/rake_task'
 require 'bacon'
+
+# These dependencies can be omitted using "bundle install --without"; tolerate their absence.
+['rdoc/task'].each do |optional|
+  begin
+    require optional
+  rescue LoadError
+    # ignore
+  end
+end
 
 desc "Run unit tests"
 task :default => 'spec'
@@ -52,19 +60,24 @@ namespace :spec do
   end
 end
 
-desc 'Generate documentation for the right_amqp gem'
-Rake::RDocTask.new(:rdoc) do |rdoc|
-  rdoc.rdoc_dir = 'doc/rdocs'
-  rdoc.title = 'RightAMQP'
-  rdoc.options << '--line-numbers' << '--inline-source'
-  rdoc.rdoc_files.include('README.rdoc')
-  rdoc.rdoc_files.include('lib/**/*.rb')
+if defined?(Rake::RDocTask)
+  desc 'Generate documentation for the right_amqp gem'
+  Rake::RDocTask.new(:rdoc) do |rdoc|
+    rdoc.rdoc_dir = 'doc/rdocs'
+    rdoc.title = 'RightAMQP'
+    rdoc.options << '--line-numbers' << '--inline-source'
+    rdoc.rdoc_files.include('README.rdoc')
+    rdoc.rdoc_files.include('lib/**/*.rb')
+  end
 end
 CLEAN.include('doc/rdocs')
 
 desc "Build right_amqp gem"
-Gem::PackageTask.new(Gem::Specification.load("right_amqp.gemspec")) do |package|
-  package.need_zip = true
-  package.need_tar = true
+Gem::PackageTask.new(Gem::Specification.load("right_amqp.gemspec")) do |pkg|
+  pkg.need_zip = true
+  pkg.need_tar = true
 end
 CLEAN.include('pkg')
+
+require 'right_develop'
+RightDevelop::CI::RakeTask.new

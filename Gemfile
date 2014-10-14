@@ -1,19 +1,28 @@
-source 'http://s3.amazonaws.com/rightscale_rightlink_gems_dev'
-source "https://rubygems.org"
+source 'https://rubygems.org'
 
 gemspec
 
-# Lock eventmachine to a published and well-tested version to avoid picking up
-# proprietary builds that happen to be installed locally
-group :custom do
-  gem "eventmachine", "1.0.0.9"
+gem 'rake',             '>= 0.9.2.2'
+
+###
+### Test-only gems
+###
+group :test do
+  gem 'json',            '~> 1.4'
+  gem 'rspec',           '~> 2.13.0'
+  gem 'flexmock',        '~> 1.0'
+  gem 'right_develop',   '~> 3.1'
+  gem 'simplecov'
+  gem 'bacon'
 end
 
+###
+### Development-only gems (not available in CI).
+### No version or Ruby VM constraints; assume these are always compatible with
+### whatever Ruby version we're using, until we discover otherwise.
+###
 group :development do
-  gem "rake",         "0.9.2.2"
-  gem "ruby-debug19", :platforms => "mri_19"
-  gem "rdoc",         "~> 3.12"
-  gem "rspec",        "~> 2.8"
-  gem "flexmock",     "~> 0.9"
-  gem "bacon"
+  gem 'ruby-debug', :platforms => [:ruby_18]
+  gem 'pry', :platforms => [:ruby_19, :ruby_20, :ruby_21]
+  gem 'pry-byebug', :platforms => [:ruby_20, :ruby_21]
 end
