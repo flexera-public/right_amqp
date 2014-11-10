@@ -898,9 +898,21 @@ describe RightAMQP::BrokerClient do
       @queue.should_receive(:delete).once
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
       broker.subscribe({:name => "queue1"}, {:type => :direct, :name => "exchange"}) {|_, _|}
+      @channel.should_receive(:queue).with("queue1", on { |arg| arg[:no_declare] }).and_return(@queue).once
       broker.queues.should == [@queue]
       broker.delete("queue1").should be_true
       broker.queues.should == []
+    end
+
+    it "should delete the named queue even if not it is not a currently open queue" do
+      queue2 = flexmock("queue2", :bind => @bind, :name => "queue2")
+      queue2.should_receive(:delete).once
+      broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
+      broker.subscribe({:name => "queue1"}, {:type => :direct, :name => "exchange"}) {|_, _|}
+      @channel.should_receive(:queue).with("queue2", on { |arg| arg[:no_declare] }).and_return(queue2).once
+      broker.queues.should == [@queue]
+      broker.delete("queue2").should be_true
+      broker.queues.should == [@queue]
     end
 
     it "should return false if the client is not usable" do

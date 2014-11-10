@@ -416,7 +416,7 @@ module RightAMQP
         false
       end
     end
-3
+
     # Delete queue
     #
     # === Parameters
@@ -438,7 +438,7 @@ module RightAMQP
           unless deleted
             # Allowing declare to happen since queue may not exist and do not want NOT_FOUND
             # failure to cause AMQP channel to close
-            @channel.queue(name, options).delete
+            @channel.queue(name, options.merge(:no_declare => true)).delete
             deleted = true
           end
         rescue StandardError => e
