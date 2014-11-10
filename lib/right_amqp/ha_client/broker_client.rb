@@ -99,7 +99,7 @@ module RightAMQP
     #   :prefetch(Integer):: Maximum number of messages the AMQP broker is to prefetch for the agent
     #     before it receives an ack. Value 1 ensures that only last unacknowledged gets redelivered
     #     if the agent crashes. Value 0 means unlimited prefetch.
-    #   :fiber_pool(NB::FiberPool):: Pool of initialized fibers to be used for asynchronous message
+    #   :fiber_pool(FiberPool):: Pool of initialized fibers to be used for asynchronous message
     #     processing (can be overridden with subscribe option)
     #   :exception_on_receive_callback(Proc):: Callback activated on a receive exception with parameters
     #     message(Object):: Message received
@@ -216,7 +216,7 @@ module RightAMQP
     #   :no_log(Boolean):: Disable receive logging unless debug level
     #   :exchange2(Hash):: Additional exchange to which same queue is to be bound
     #   :brokers(Array):: Identity of brokers for which to subscribe, defaults to all usable if nil or empty
-    #   :fiber_pool(NB::FiberPool):: Pool of initialized fibers to be used for asynchronous message
+    #   :fiber_pool(FiberPool):: Pool of initialized fibers to be used for asynchronous message
     #     processing (non-nil value will override constructor option setting)
     #
     # === Block
