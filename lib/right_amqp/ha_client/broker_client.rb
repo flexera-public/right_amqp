@@ -280,6 +280,8 @@ module RightAMQP
     end
 
     # Unsubscribe from the specified queues
+    # If not currently connected, remove queue from channel so that do not
+    # automatically resubscribe when get reconnected
     # Silently ignore unknown queues
     #
     # === Parameters
@@ -296,7 +298,12 @@ module RightAMQP
           if queue_names.include?(q.name)
             begin
               logger.info("[stop] Unsubscribing queue #{q.name} on broker #{@alias}")
-              q.unsubscribe { block.call if block }
+              if usable?
+                q.unsubscribe { block.call if block }
+              else
+                @channel.queues.delete(q.name)
+                block.call if block
+              end
             rescue StandardError => e
               logger.exception("Failed unsubscribing queue #{q.name} on broker #{@alias}", e, :trace)
               @exception_stats.track("unsubscribe", e)

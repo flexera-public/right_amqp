@@ -420,6 +420,7 @@ describe RightAMQP::HABrokerClient do
                                      ":host => '#{h}', :port => 5672, :index => #{i})")
         eval("@broker#{k}.should_receive(:status).and_return(:connected).by_default")
         eval("@broker#{k}.should_receive(:usable?).and_return(true).by_default")
+        eval("@broker#{k}.should_receive(:failed?).and_return(false).by_default")
         eval("@broker#{k}.should_receive(:connected?).and_return(true).by_default")
         eval("@broker#{k}.should_receive(:subscribe).and_return(true).by_default")
         eval("flexmock(RightAMQP::BrokerClient).should_receive(:new).with(@identity#{k}, @address#{k}, " +
@@ -597,11 +598,14 @@ describe RightAMQP::HABrokerClient do
         @broker3.should_receive(:unsubscribe).and_return(true).and_yield.by_default
       end
 
-      it "should unsubscribe from named queues on all usable broker clients" do
+      it "should unsubscribe from named queues on all broker clients that have not failed" do
         ha = RightAMQP::HABrokerClient.new(@serializer, :host => "first, second, third")
-        @broker1.should_receive(:usable?).and_return(false)
-        @broker1.should_receive(:unsubscribe).never
-        @broker2.should_receive(:unsubscribe).and_return(true).once
+        @broker1.should_receive(:status).and_return(:disconnected)
+        @broker1.should_receive(:connected?).and_return(false)
+        @broker1.should_receive(:unsubscribe).and_return(true).once
+        @broker2.should_receive(:status).and_return(:failed)
+        @broker2.should_receive(:failed?).and_return(true)
+        @broker2.should_receive(:unsubscribe).never
         @broker3.should_receive(:unsubscribe).and_return(true).once
         ha.unsubscribe([@queue_name]).should be_true
       end

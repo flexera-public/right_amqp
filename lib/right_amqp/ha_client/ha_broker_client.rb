@@ -504,7 +504,8 @@ module RightAMQP
       identities
     end
 
-    # Unsubscribe from the specified queues on usable broker clients
+    # Unsubscribe from the specified queues on all broker clients regardless of whether
+    # connected because do not want these queues to be resubscribed if reconnect
     # Silently ignore unknown queues
     #
     # === Parameters
@@ -517,15 +518,16 @@ module RightAMQP
     # === Return
     # true:: Always return true
     def unsubscribe(queue_names, timeout = nil, &blk)
-      count = each(:usable).inject(0) do |c, b|
-        c + b.queues.inject(0) { |c, q| c + (queue_names.include?(q.name) ? 1 : 0) }
+      count = @brokers.inject(0) do |c, b|
+        c += b.queues.inject(0) { |c, q| c + (queue_names.include?(q.name) ? 1 : 0) } unless b.failed?
+        c
       end
       if count == 0
         blk.call if blk
       else
         handler = CountedDeferrable.new(count, timeout)
         handler.callback { blk.call if blk }
-        each(:usable) { |b| b.unsubscribe(queue_names) { handler.completed_one } }
+        @brokers.each { |b| b.unsubscribe(queue_names) { handler.completed_one } unless b.failed? }
       end
       true
     end
@@ -715,7 +717,7 @@ module RightAMQP
     # identity(String|nil):: Serialized identity of broker removed, or nil if unknown
     def remove(host, port, &blk)
       identity = self.class.identity(host, port)
-      if broker = @brokers_hash[identity]
+      if (broker = @brokers_hash[identity])
         logger.info("Removing #{identity}, alias #{broker.alias} from broker list")
         broker.close(propagate = true, normal = true, log = false)
         @brokers_hash.delete(identity)
@@ -816,7 +818,7 @@ module RightAMQP
     def connection_status(options = {}, &callback)
       id = generate_id
       @connection_status[id] = {:boundary => options[:boundary], :brokers => options[:brokers], :callback => callback}
-      if timeout = options[:one_off]
+      if (timeout = options[:one_off])
         @connection_status[id][:timer] = EM::Timer.new(timeout) do
           if @connection_status[id]
             if @connection_status[id][:callback].arity == 2
@@ -941,7 +943,7 @@ module RightAMQP
     # (Array):: Selected broker clients
     def each(status, identities = nil)
       choices = if identities && !identities.empty?
-        identities.inject([]) { |c, i| if b = @brokers_hash[i] then c << b else c end }
+        identities.inject([]) { |c, i| if (b = @brokers_hash[i]) then c << b else c end }
       else
         @brokers
       end
@@ -968,7 +970,7 @@ module RightAMQP
       select = options[:order]
       if options[:brokers] && !options[:brokers].empty?
         options[:brokers].each do |identity|
-          if choice = @brokers_hash[identity]
+          if (choice = @brokers_hash[identity])
             choices << choice
           else
             logger.exception("Invalid broker identity #{identity.inspect}, check server configuration")
@@ -1066,7 +1068,7 @@ module RightAMQP
     def handle_return(identity, to, reason, message)
       @brokers_hash[identity].update_status(:stopping) if reason == "ACCESS_REFUSED"
 
-      if context = @published.fetch(message)
+      if (context = @published.fetch(message))
         @return_stats.update("#{alias_(identity)} (#{reason.to_s.downcase})")
         context.record_failure(identity)
         name = context.name
@@ -1167,7 +1169,7 @@ module RightAMQP
       def store(message, context)
         key = identify(message)
         now = Time.now.to_i
-        if entry = @cache[key]
+        if (entry = @cache[key])
           entry[0] = now
           @lru.push(@lru.delete(key))
         else
@@ -1187,7 +1189,7 @@ module RightAMQP
       # (Context|nil):: Context of message, or nil if not found in cache
       def fetch(message)
         key = identify(message)
-        if entry = @cache[key]
+        if (entry = @cache[key])
           entry[0] = Time.now.to_i
           @lru.push(@lru.delete(key))
           entry[1]

@@ -543,6 +543,22 @@ describe RightAMQP::BrokerClient do
       broker.queues.should be_empty
     end
 
+    it "should remove unsubscribed queue from list of queues even if broker disconnected" do
+      queues = {"queue1" => @queue}
+      @channel.should_receive(:queues).and_return(queues).once
+      @queue.should_receive(:unsubscribe).never
+      broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
+      broker.subscribe({:name => "queue1"}, {:type => :direct, :name => "exchange"}) {|_, _|}
+      broker.queues.size.should == 1
+      broker.queues[0].name.should == "queue1"
+      broker.__send__(:update_status, :disconnected)
+      called = 0
+      broker.unsubscribe(["queue1"]) { called += 1 }
+      called.should == 1
+      broker.queues.should be_empty
+      queues.should be_empty
+    end
+
     it "should ignore unsubscribe if queue unknown" do
       @queue.should_receive(:unsubscribe).never
       broker = RightAMQP::BrokerClient.new(@identity, @address, @serializer, @exceptions, @non_deliveries, @options)
