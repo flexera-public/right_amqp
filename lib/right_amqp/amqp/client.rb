@@ -29,6 +29,7 @@ module AMQP
           # Use frame_max received from broker so that adapt properly to RabbitMQ 2.4.1
           # expecting 131,072 and RabbitMQ 3.4.1 that is configured to 0 meaning unlimited
           # because it will otherwise reject requests larger than this and fail the connection
+          @frame_max = method.frame_max
           send Protocol::Connection::TuneOk.new(:channel_max => 0,
                                                 :frame_max => method.frame_max,
                                                 :heartbeat => @settings[:heartbeat] || 0)
@@ -168,6 +169,10 @@ module AMQP
 
     def connected?
       @connected
+    end
+
+    def frame_max
+      @frame_max
     end
 
     def unbind
