@@ -388,7 +388,7 @@ class MQ
     #
     def receive headers, body
       headers = MQ::Header.new(@mq, headers)
-
+      @mq.log "AMQP EXTRA LOGGING: header = #{headers.inspect}"
       if cb = (@on_msg || @on_pop)
         cb.call *(cb.arity == 1 ? [body] : [headers, body])
       end
