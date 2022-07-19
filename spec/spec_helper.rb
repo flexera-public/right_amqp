@@ -27,6 +27,8 @@ require 'rspec'
 require 'flexmock'
 require 'simplecov'
 
+SimpleCov.start
+
 RSpec.configure do |c|
   c.mock_with(:flexmock)
 end
