@@ -63,34 +63,34 @@ jobs:
 
       - name: Start Docker container
         run: |
-          docker run -t -d --name cs_elb_builder --env SSH_PRIVATE_KEY="$SSH_PRIVATE_KEY" -v /var/run/docker.sock:/var/run/docker.sock -v /usr/bin/docker:/usr/bin/docker rightscale/cs_elb:github_builder_image
+          docker run -t -d --name right_amqp --env SSH_PRIVATE_KEY="$SSH_PRIVATE_KEY" -v /var/run/docker.sock:/var/run/docker.sock -v /usr/bin/docker:/usr/bin/docker rightscale/cs_elb:github_builder_image
         env:
           SSH_PRIVATE_KEY: ${{ secrets.GLOBAL_FLEXERA_CI_PRIVATE_SSH_KEY }}
 
       - name: check rvm, ruby, gem and bundle version
         run: |
           echo "checking RUBY version"
-          docker exec -i cs_elb_builder ruby -v
+          docker exec -i right_amqp ruby -v
           echo "checking GEM version"
-          docker exec -i cs_elb_builder gem -v
+          docker exec -i right_amqp gem -v
       - name: Set ssh key for GitHub in container
         run: |
-          docker exec -i cs_elb_builder /bin/bash -c "echo \"$SSH_PRIVATE_KEY\" > /root/.ssh/id_rsa"
+          docker exec -i right_amqp /bin/bash -c "echo \"$SSH_PRIVATE_KEY\" > /root/.ssh/id_rsa"
         env:
           SSH_PRIVATE_KEY: ${{ secrets.GLOBAL_FLEXERA_CI_PRIVATE_SSH_KEY }}
 
       - name: Pull code in container
         run: |
-          docker exec -i cs_elb_builder git clone --depth=50 --branch=$TRAVIS_BRANCH git@github.com:rightscale/cs_elb.git /cs_elb
+          docker exec -i right_amqp git clone --depth=50 --branch=$TRAVIS_BRANCH git@github.com:rightscale/cs_elb.git /cs_elb
 
-      - name: Run bundle check and package
-        run: |
-          docker exec -i cs_elb_builder /bin/bash -c 'bundle check || bundle package --all'
+      # - name: Run bundle check and package
+      #   run: |
+      #     docker exec -i right_amqp /bin/bash -c 'bundle check || bundle package --all'
 
       - name: Bundle install
         run: |
-          docker exec -i cs_elb_builder bundle install
+          docker exec -i right_amqp bundle install
 
       - name: Run Test
         run: |
-          docker exec -i cs_elb_builder bundle exec rake --trace spec
+          docker exec -i right_amqp bundle exec rake ci:spec
