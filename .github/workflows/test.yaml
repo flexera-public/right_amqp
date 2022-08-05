@@ -1,0 +1,96 @@
+name: "CS ELB - Test"
+on:
+  push:
+    branches:
+      - master
+      - "*_cow"
+    tags:
+      - release*
+
+env:
+  # HOME required by Setup Git and Setup Go Steps
+  HOME: ${{ github.workspace }}
+
+jobs:
+  build:
+    name: "Test"
+    runs-on: ubuntu-latest
+
+    steps:
+      # SSH Agent Setup required for git to pull modules from private repos
+      - name: SSH Agent Setup
+        uses: webfactory/ssh-agent@v0.5.3
+        with:
+          ssh-private-key: ${{ secrets.GLOBAL_FLEXERA_CI_PRIVATE_SSH_KEY }}
+
+      - name: Checkout so we can get build tags
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+          ssh-key: ${{ secrets.GLOBAL_FLEXERA_CI_PRIVATE_SSH_KEY }}
+          submodules: recursive
+
+      - name: Setup Environment Variables
+        env:
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          if [[ $GITHUB_REF =~ 'refs/tags' ]];
+          then
+            ## Get just the git tag from GITHUB_REF
+            echo GITHUB_TAG=${GITHUB_REF#refs/tags/*} >> $GITHUB_ENV
+            ## Set TRAVIS_TAG and TAG which are used by flexera/go-makefiles submodule and originally based on TravisCI
+            echo TRAVIS_TAG=${GITHUB_REF#refs/tags/*} >> $GITHUB_ENV
+            # Also set the branch name for tags
+            echo TRAVIS_BRANCH=${GITHUB_REF#refs/tags/*} >> $GITHUB_ENV
+            echo TAG=${GITHUB_REF#refs/tags/*} >> $GITHUB_ENV
+          elif [[ $GITHUB_REF =~ 'refs/heads' ]];
+          then
+            ## Get the branch name and set TRAVIS_BRANCH
+            echo TRAVIS_BRANCH=${GITHUB_REF#refs/heads/*} >> $GITHUB_ENV
+            echo set TRAVIS_BRANCH to $TRAVIS_BRANCH
+          else
+            echo unknown github ref $GITHUB_REF
+          fi
+       
+      - name: Login Docker
+        run: |
+          docker login -u $DOCKERHUB_USER -p $DOCKERHUB_PASSWORD
+        env:
+          DOCKERHUB_EMAIL: ${{ secrets.DOCKERHUB_EMAIL }}
+          DOCKERHUB_USER: ${{ secrets.DOCKERHUB_USER }}
+          DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      - name: Start Docker container
+        run: |
+          docker run -t -d --name cs_elb_builder --env SSH_PRIVATE_KEY="$SSH_PRIVATE_KEY" -v /var/run/docker.sock:/var/run/docker.sock -v /usr/bin/docker:/usr/bin/docker rightscale/cs_elb:github_builder_image
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.GLOBAL_FLEXERA_CI_PRIVATE_SSH_KEY }}
+
+      - name: check rvm, ruby, gem and bundle version
+        run: |
+          echo "checking RUBY version"
+          docker exec -i cs_elb_builder ruby -v
+          echo "checking GEM version"
+          docker exec -i cs_elb_builder gem -v
+      - name: Set ssh key for GitHub in container
+        run: |
+          docker exec -i cs_elb_builder /bin/bash -c "echo \"$SSH_PRIVATE_KEY\" > /root/.ssh/id_rsa"
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.GLOBAL_FLEXERA_CI_PRIVATE_SSH_KEY }}
+
+      - name: Pull code in container
+        run: |
+          docker exec -i cs_elb_builder git clone --depth=50 --branch=$TRAVIS_BRANCH git@github.com:rightscale/cs_elb.git /cs_elb
+
+      - name: Run bundle check and package
+        run: |
+          docker exec -i cs_elb_builder /bin/bash -c 'bundle check || bundle package --all'
+
+      - name: Bundle install
+        run: |
+          docker exec -i cs_elb_builder bundle install
+
+      - name: Run Test
+        run: |
+          docker exec -i cs_elb_builder bundle exec rake --trace spec
