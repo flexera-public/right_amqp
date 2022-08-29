@@ -1,89 +1,45 @@
-name: "CS ELB - Test"
+name: "amqp-test"
 on:
   push:
     branches:
       - master
       - "*_cow"
     tags:
-      - release*
-
-env:
-  # HOME required by Setup Git and Setup Go Steps
-  HOME: ${{ github.workspace }}
+      - release*  
+  pull_request:
+    types: [ opened, synchronize, reopened ]
 
 jobs:
-  build:
+  test:
     name: "Test"
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby-version: ['1.8','1.9','2.0','2.1']
+
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
 
     steps:
-      # SSH Agent Setup required for git to pull modules from private repos
-      - name: SSH Agent Setup
-        uses: webfactory/ssh-agent@v0.5.3
-
-      - name: Checkout so we can get build tags
+      # Force SSH authentication for repositories with HTTPS references
+      - name: Git Config
+        run: |
+          git config --global --add url.ssh://git@github.com/flexera/.insteadof https://github.com/flexera/
+          git config --global --add url.ssh://git@github.com/rightscale/.insteadof https://github.com/rightscale/
+      
+      - name: Checkout repository
         uses: actions/checkout@v2
         with:
           fetch-depth: 0
           submodules: recursive
 
-      - name: Setup Environment Variables
-        env:
-          GITHUB_REF: ${{ github.ref }}
-          GITHUB_SHA: ${{ github.sha }}
-        run: |
-          if [[ $GITHUB_REF =~ 'refs/tags' ]];
-          then
-            ## Get just the git tag from GITHUB_REF
-            echo GITHUB_TAG=${GITHUB_REF#refs/tags/*} >> $GITHUB_ENV
-            ## Set TRAVIS_TAG and TAG which are used by flexera/go-makefiles submodule and originally based on TravisCI
-            echo TRAVIS_TAG=${GITHUB_REF#refs/tags/*} >> $GITHUB_ENV
-            # Also set the branch name for tags
-            echo TRAVIS_BRANCH=${GITHUB_REF#refs/tags/*} >> $GITHUB_ENV
-            echo TAG=${GITHUB_REF#refs/tags/*} >> $GITHUB_ENV
-          elif [[ $GITHUB_REF =~ 'refs/heads' ]];
-          then
-            ## Get the branch name and set TRAVIS_BRANCH
-            echo TRAVIS_BRANCH=${GITHUB_REF#refs/heads/*} >> $GITHUB_ENV
-            echo set TRAVIS_BRANCH to $TRAVIS_BRANCH
-          else
-            echo unknown github ref $GITHUB_REF
-          fi
-       
-      - name: Login Docker
-        run: |
-          docker login -u $DOCKERHUB_USER -p $DOCKERHUB_PASSWORD
-        env:
-          DOCKERHUB_EMAIL: ${{ secrets.DOCKERHUB_EMAIL }}
-          DOCKERHUB_USER: ${{ secrets.DOCKERHUB_USER }}
-          DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby-version }}
 
-      - name: Start Docker container
-        run: |
-          docker run -t -d --name right_amqp --env SSH_PRIVATE_KEY="$SSH_PRIVATE_KEY" -v /var/run/docker.sock:/var/run/docker.sock -v /usr/bin/docker:/usr/bin/docker rightscale/right_amqp:github_builder_image
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.GLOBAL_FLEXERA_CI_PRIVATE_SSH_KEY }}
-
-      - name: check rvm, ruby, gem and bundle version
-        run: |
-          echo "checking RUBY version"
-          docker exec -i right_amqp ruby -v
-          echo "checking GEM version"
-          docker exec -i right_amqp gem -v
-      - name: Set ssh key for GitHub in container
-        run: |
-          docker exec -i right_amqp /bin/bash -c "echo \"$SSH_PRIVATE_KEY\" > /root/.ssh/id_rsa"
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.GLOBAL_FLEXERA_CI_PRIVATE_SSH_KEY }}
-
-      - name: Pull code in container
-        run: |
-          docker exec -i right_amqp git clone --depth=50 --branch=$TRAVIS_BRANCH git@github.com:rightscale/right_amqp.git /right_amqp
-
-      - name: Bundle install
-        run: |
-          docker exec -i right_amqp bundle install
-
-      - name: Run Test
-        run: |
-          docker exec -i right_amqp bundle exec rake ci:spec
+      - name: Run Spec
+        run: bundle exec rake ci:spec
