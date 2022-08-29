@@ -20,14 +20,11 @@ jobs:
       # SSH Agent Setup required for git to pull modules from private repos
       - name: SSH Agent Setup
         uses: webfactory/ssh-agent@v0.5.3
-        with:
-          ssh-private-key: ${{ secrets.GLOBAL_FLEXERA_CI_PRIVATE_SSH_KEY }}
 
       - name: Checkout so we can get build tags
         uses: actions/checkout@v2
         with:
           fetch-depth: 0
-          ssh-key: ${{ secrets.GLOBAL_FLEXERA_CI_PRIVATE_SSH_KEY }}
           submodules: recursive
 
       - name: Setup Environment Variables
@@ -63,7 +60,7 @@ jobs:
 
       - name: Start Docker container
         run: |
-          docker run -t -d --name right_amqp --env SSH_PRIVATE_KEY="$SSH_PRIVATE_KEY" -v /var/run/docker.sock:/var/run/docker.sock -v /usr/bin/docker:/usr/bin/docker rightscale/cs_elb:github_builder_image
+          docker run -t -d --name right_amqp --env SSH_PRIVATE_KEY="$SSH_PRIVATE_KEY" -v /var/run/docker.sock:/var/run/docker.sock -v /usr/bin/docker:/usr/bin/docker rightscale/right_amqp:github_builder_image
         env:
           SSH_PRIVATE_KEY: ${{ secrets.GLOBAL_FLEXERA_CI_PRIVATE_SSH_KEY }}
 
@@ -81,11 +78,7 @@ jobs:
 
       - name: Pull code in container
         run: |
-          docker exec -i right_amqp git clone --depth=50 --branch=$TRAVIS_BRANCH git@github.com:rightscale/cs_elb.git /cs_elb
-
-      # - name: Run bundle check and package
-      #   run: |
-      #     docker exec -i right_amqp /bin/bash -c 'bundle check || bundle package --all'
+          docker exec -i right_amqp git clone --depth=50 --branch=$TRAVIS_BRANCH git@github.com:rightscale/right_amqp.git /right_amqp
 
       - name: Bundle install
         run: |
