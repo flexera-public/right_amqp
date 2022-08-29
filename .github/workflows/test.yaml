@@ -46,13 +46,13 @@ jobs:
           ruby-version: ${{ matrix.ruby-version }}
           bundler-cache: true
 
-      - name: Setup prereqs
-        run: |
-          # Dictionary needed for factory_girl gem, which is used during testing.
-          # It is also needed for the praxis doc build.
-          # For some reason, it's not already installed on ubuntu-latest.
-          sudo apt-get -qq update && apt-get install -y build-essential
-          sudo apt-get install --yes libgmp3-dev
+      # - name: Setup prereqs
+      #   run: |
+      #     # Dictionary needed for factory_girl gem, which is used during testing.
+      #     # It is also needed for the praxis doc build.
+      #     # For some reason, it's not already installed on ubuntu-latest.
+      #     sudo apt-get -qq update && apt-get install -y build-essential
+      #     sudo apt-get install --yes libgmp3-dev
 
       - name: Run Spec
         run: |
