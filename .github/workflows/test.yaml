@@ -1,27 +1,32 @@
-name: "amqp-test"
+name: "Run Tests"
 on:
   push:
     branches:
       - master
       - "*_cow"
     tags:
-      - release*  
+      - release*
   pull_request:
-    types: [ opened, synchronize, reopened ]
+    types: [opened, synchronize, reopened]
+
+env:
+  # HOME required by Setup Git
+  HOME: ${{ github.workspace }}
+
+# Cancel previous runs for same github.ref (refs/heads/NITRO-2264_improve_workflows_cow)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     name: "Test"
     runs-on: ubuntu-latest
+
     strategy:
       fail-fast: false
       matrix:
-        ruby-version: ['1.8','1.9','2.0','2.1']
-
-    permissions:
-      security-events: write
-      actions: read
-      contents: read
+        ruby-version: ['2.1']
 
     steps:
       # Force SSH authentication for repositories with HTTPS references
@@ -29,17 +34,27 @@ jobs:
         run: |
           git config --global --add url.ssh://git@github.com/flexera/.insteadof https://github.com/flexera/
           git config --global --add url.ssh://git@github.com/rightscale/.insteadof https://github.com/rightscale/
-      
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v2
         with:
           fetch-depth: 0
           submodules: recursive
 
-      - name: Set up Ruby
+      - name: Setup Ruby
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: ${{ matrix.ruby-version }}
+          bundler-cache: true
+
+      - name: Setup prereqs
+        run: |
+          # Dictionary needed for factory_girl gem, which is used during testing.
+          # It is also needed for the praxis doc build.
+          # For some reason, it's not already installed on ubuntu-latest.
+          sudo apt-get -qq update && apt-get install -y build-essential
+          sudo apt-get install --yes libgmp3-dev
 
       - name: Run Spec
-        run: bundle exec rake ci:spec
+        run: |
+          gem install bundler -v '< 2'
+          bundle exec rake ci:spec
